@@ -1,0 +1,169 @@
+---
+title: "5_hub_genes"
+author: "Flavio Gabrieli"
+format: html
+editor: visual
+---
+
+# Identification of hub genes, imputation of gene significance, connectivity plot
+
+Resume session
+
+```{r}
+session_name <- "PROVA"
+```
+
+Load environment
+
+```{r}
+source("src/5_env_setup.R")
+load(paste0(session_name, "/out/3_networks.Rdata"))
+load(paste0(session_name, "/out/1_prepared_data.Rdata"))
+source(paste0(session_name, "/in/", session_name,"_parameters.R"))
+```
+
+## Hub genes
+
+Load TOM
+
+```{r}
+load(net$TOMFiles)
+```
+
+2.  Calculate Intramodular Connectivity
+
+    I**ntramodular connectivity** for each gene is calculated as the sum of TOM values for that gene with others in the same module.
+
+```{r}
+net_km$IMconnectivity <- intramodularConnectivity(adjMat = TOM, colors = net_km$colors)
+rownames(net_km$IMconnectivity) <- colnames(data$exprData)
+write.table(net_km$IMconnectivity, file = paste0(session_name,"/out/intramodular_connectivity_km.csv"))
+
+net$IMconnectivity <- intramodularConnectivity(adjMat = TOM, colors = net$colors)
+rownames(net$IMconnectivity) <- colnames(data$exprData)
+write.table(net$IMconnectivity, file = paste0(session_name,"/out/intramodular_connectivity_hc.csv"))
+```
+
+3.  Calculate Module Membership
+
+    Module membership, also called eigengene-based connectivity, measures how strongly a gene correlates with the modules eigengene. Genes with a high absolute value of module membership (e.g., \|MM\| \> 0.8) are considered strongly connected to the module. You can also use signedKME() function
+
+```{r}
+net_km$geneMM <- cor(data$exprData, net_km$MEs)
+net$geneMM <- cor(data$exprData, net$MEs)
+write.table(net_km$geneMM, file = paste0(session_name,"/out/geneMM_km.csv"))
+write.table(net$IMconnectivity, file = paste0(session_name,"/out/geneMM_hc.csv"))
+```
+
+4.  **Combine Connectivity and Module Membership to identify hub genes**
+
+    Define hub genes as those with:
+
+    -   High intramodular connectivity (e.g., top 10% of kWithin in the module considered).
+
+    -   Strong module membership (e.g., \|MM\| \> 0.8).
+
+```{r}
+moduleColor = "skyblue" # select module to analyze
+
+network = "net_km"
+assign(paste0(moduleColor, "_",network,"_hubGenes"), hub_genes(network = get(network),
+                                                               module = moduleColor,
+                                                               minMM = 0.8, # |MM| > 0.8
+                                                               q_kWithin = 0.9) # top 10% of kWithin in the module
+       )
+
+#export table
+write.table(rownames(get(paste0(moduleColor, "_",network,"_hubGenes"))), file = paste0(session_name,"/out/",moduleColor, "_",network,"_hubGenes.txt"), quote = FALSE, col.names = FALSE, row.names = FALSE)
+```
+
+## Calculate Gene Significance (GS)
+
+"we define a node significance measure GS = (GS1,\...,GSn) as a vector with n components that correspond to the network nodes. For the ith node, GSi quantifies the significance or importance with regard to a particular application. The only assumption is that GSi = 0 means that node i is not significant with regard to the application under consideration." (Steve Horvath - Weighted Network Analysis\_ Applications in Genomics and Systems Biology (2011, Springer) \[10.1007_978-1-4419-8819-5\])
+
+Using the Gene significance (GS) and module membership (MM) measures, we can identify genes that have a high significance for the trait of interest as well as high module membership in interesting modules.
+
+```{r}
+head(data$metadata)
+
+GS <- apply(t(data$exprData), 1, function(gene_expr) cor.test(gene_expr, data$traits$viability, alternative = "two.sided" , method = "pearson")$estimate)
+GS_pvalue <- apply(t(data$exprData), 1, function(gene_expr) cor.test(gene_expr, data$traits$viability, alternative = "two.sided" , method = "pearson")$p.value)
+
+max(GS)
+```
+
+## Connectivity plot
+
+```{r}
+modules = c("skyblue","lightgreen", "cyan", "salmon")
+
+probes = colnames(data$exprData)#get gene names
+inModule = is.finite(match(net_km$colors, modules))#get a mask for selecting genes in the
+modProbes = probes[inModule]#get the genes
+modTOM = TOM[inModule, inModule]#filter the TOM for the genes in the modules of interest
+dimnames(modTOM) = list(modProbes, modProbes) #set the names of the modTOM as gene names
+
+# Set the diagonal of the TOM dissimilarity to NA 
+dissTOM <- 1-modTOM
+diag(dissTOM) <- NA
+
+#hierarchical clustering
+geneTree = hclust(as.dist(dissTOM), method="average")
+
+pdf(file = paste0(session_name,"/plots/connectivity_",paste0(modules, collapse = "-"),".pdf"),
+  width = 8,          # Width in inches
+  height = 8,         # Height in inches
+  bg = "white")
+TOMplot(dissim = dissTOM^8,
+        dendro = geneTree,
+        Colors = net_km$colors[inModule],
+        main = "Connectivity plot")
+dev.off()
+```
+
+```{r}
+png(file = paste0(session_name,"/plots/connectivity_",paste0(modules, collapse = "-"),".png"),
+  width = 8,          # Width in inches
+  height = 8,  # Height in inches
+  units = "in",
+  bg = "white",
+  res = 600)
+TOMplot(dissim = dissTOM^8,
+        dendro = geneTree,
+        Colors = net_km$colors[inModule],
+        main = "Connectivity plot")
+dev.off()
+```
+
+## Export network to Cytoscape
+
+```{r}
+#indicate one or more modules to export
+modules = c("skyblue")
+
+probes = colnames(data$exprData)#get gene names
+inModule = is.finite(match(net_km$colors, modules))#get a mask for selecting genes in the indicated modules
+modProbes = probes[inModule]#get the genes
+modTOM = TOM[inModule, inModule]#filter the TOM for the genes in the modules of interest
+dimnames(modTOM) = list(modProbes, modProbes) #set the names of the modTOM as gene names
+altNamses = get_TAIRsymbols(modProbes) # get TAIR symbols for annotation of the network
+edge_threshold =  calculateTop10PercentThreshold(tom = modTOM)#define a threshold for edges
+
+exportNetworkToCytoscape(modTOM,
+  edgeFile = paste("out/cytoscape/CytoscapeInput-edges-", paste(modules, collapse="-"),"edge_threshold", edge_threshold,".txt", sep=""),
+  nodeFile = paste("out/cytoscape/CytoscapeInput-nodes-", paste(modules, collapse="-"), "edge_threshold", edge_threshold,".txt", sep=""),
+  weighted = TRUE,
+  threshold = edge_threshold,
+  nodeNames = modProbes,
+  altNodeNames = altNamses,
+  nodeAttr = bwnet_km$colors[inModule])
+```
+
+```{r}
+A <-adjacency(data$exprData)
+
+TOMgraph <- graph_from_adjacency_matrix(A[inModule, inModule], mode = "undirected", weighted =TRUE, diag = F)
+
+plot(TOMgraph, vertex.size = 30, vertex.label.color = "white", edge.color = "grey") 
+plot(TOMgraph, layout = layout_with_fr(TOMgraph))
+```

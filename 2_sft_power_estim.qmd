@@ -1,0 +1,89 @@
+---
+title: "WGCNA_part2_data_normalization"
+format: html
+editor: visual
+---
+
+# Power threshold determination for WGCNA
+
+Specify session name
+
+```{r}
+session_name <- "PROVA"
+```
+
+Load environment setup, session parameters and normalized data
+
+```{r}
+source("src/2_env_setup.R")
+source(paste0(session_name,"/in/", session_name,"_parameters.R"))
+load(paste0(session_name,"/out/1_prepared_data.RData"))
+```
+
+```{r}
+# Choose a soft-thresholding power for correlation matrix####
+powers <- c(c(1:20), seq(from = 22, to=50, by=2))
+sft <- pickSoftThreshold(data$exprData, networkType = network_type, powerVector = powers)
+sft_df <- data.frame(sft$fitIndices) %>%
+  dplyr::mutate(model_fit = -sign(slope) * SFT.R.sq)
+```
+
+```{r}
+#plot the model fitting by the power soft threshold
+a1 <- ggplot(sft_df, aes(x = Power, y = model_fit, label = Power)) +
+  # Plot the points
+  geom_point() +
+  # We'll put the Power labels slightly above the data points
+  geom_text(nudge_y = 0.1) +
+  # We will plot what WGCNA recommends as an R^2 cutoff
+  geom_hline(yintercept = 0.80, col = "red") +
+  # Just in case our values are low, we want to make sure we can still see the 0.80 level
+  ylim(c(min(sft_df$model_fit), 1.10)) +
+  # We can add more sensible labels for our axis
+  xlab("Soft Threshold (power)") +
+  ylab(paste0(network_type, " R^2")) +
+  ggtitle("Scale independence") +
+  # This adds some nicer aesthetics to our plot
+  theme_classic()
+
+#plot mean connectivity
+a2 <- ggplot(sft_df, aes(x = Power, y = mean.k., label = Power)) +
+  # Plot the points
+  geom_point() +
+  # We'll put the Power labels slightly above the data points
+  geom_text(nudge_y = 0.1) +
+  # We can add more sensible labels for our axis
+  xlab("Soft Threshold (power)") +
+  ylab("Mean connectivity") +
+  ggtitle("Mean connectivity plot") +
+  # This adds some nicer aesthetics to our plot
+  theme_classic()
+
+grid.arrange(a1, a2, nrow = 2)
+
+pdf(file = paste0(session_name,"/plots/sft.pdf"), 
+  width = 8,          # Width in inches
+  height = 6,         # Height in inches
+  bg = "white")
+grid.arrange(a1, a2, nrow = 2)
+dev.off()
+```
+
+```{r}
+#manually set power threshold to use in WGCNA...
+
+power_threshold <- 19
+```
+
+```{r}
+#...or use the value estimated by pickSoftThreshold function
+power_threshold <- sft$powerEstimate
+```
+
+## Save power threshold
+
+```{r}
+save(power_threshold, network_type, file = paste0(session_name, "/out/2_pt.Rdata"))
+
+rm(list = ls())
+```

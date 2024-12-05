@@ -1,0 +1,203 @@
+---
+title: "3_WGCN-sbs"
+author: "Flavio Gabrieli"
+format: html
+editor: visual
+---
+
+# WGCN construction - step by step approach
+
+Resume session
+
+```{r}
+session_name <- "PROVA"
+```
+
+```{r}
+source("src/3_env_setup.R")
+load(paste0(session_name,"/out/1_prepared_data.RData"))
+load(paste0(session_name,"/out/2_pt.Rdata"))
+source(paste0(session_name,"/in/", session_name,"_parameters.R"))
+```
+
+```{r}
+#set TOMtype parameter (signed or unsigned)
+TOMtype <- "signed"
+```
+
+```{r}
+A <- adjacency(data$exprData, type = network_type, power = power_threshold)
+TOM <- TOMsimilarity(A, TOMType = TOMtype)
+
+#save TOM file for downstream analysis
+save(TOM, file = paste0(session_name, "/out/TOMfiles/TOM-sbs.Rdata"))
+
+rm(A)
+#hierarchical clustering
+dendrograms <- hclust(as.dist(1-TOM), method = "average")
+
+# here we define the modules by cutting branches
+unmergedModuleLabels <- cutreeDynamic(dendro = dendrograms,
+                                      distM = 1-TOM,
+                                      method = "hybrid",
+                                      deepSplit = deepSplit,
+                                      pamRespectsDendro = T,
+                                      minClusterSize = minModSize)
+
+# Convert labels to colors for plotting
+unmergedColors <- labels2colors(unmergedModuleLabels)
+names(unmergedColors) <- colnames(data$exprData)
+# Calculate eigengenes (skipped because they are calculated in mergeCloseModules)
+#unmergedMEList <- moduleEigengenes(data$exprData,colors=unmergedColors)
+#unmergedMEs <- MEList$eigengenes
+
+#merge modules by similar eigengenes
+net <- mergeCloseModules(exprData = data$exprData,
+                         colors = unmergedColors,
+                         #MEs = unmergedMEs,
+                         cutHeight = mergeCutHeight)
+
+#setup the object for compatibilities
+net$unmergedColors <- unmergedColors
+net$dendrograms <- list(dendrograms)
+net$dendro <- NULL
+net$oldDendro <- NULL
+net$oldMEs <- NULL
+names(net)[names(net) == "newMEs"] <- "MEs"
+net$TOMFiles <- paste0("out/TOMfiles/", session_name,"_TOM-sbs.Rdata")
+net$blockGenes <- list(c(1:ncol(data$exprData)))
+```
+
+## Re-assign modules by k-means clustering
+
+"k-means method, applied as an adjunct to standard WGCNA, results in better network partitions. These improved partitions enable more fruitful downstream analyses, as gene modules are more biologically meaningful."(<https://doi.org/10.1186/s12918-017-0420-6>)
+
+```{r}
+#for compatibility reasons with CoExpNets, change name from net$colors to net$moduleColors
+names(net)[names(net) == "colors"] <- "moduleColors"
+
+#apply k-means clustering
+net_km <- CoExpNets::applyKMeans(net.file = net,
+                                 expr.data = data$exprData
+)
+
+#restore original name and change also net_km
+names(net)[names(net) == "moduleColors"] <- "colors"
+names(net_km)[names(net_km) == "moduleColors"] <- "colors"
+```
+
+Save networks and module tables
+
+```{r}
+#save network data for visualization
+save(net, net_km, file = paste0(session_name, "/out/3_networks.Rdata"))
+```
+
+```{r}
+#export table of genes with correspondent module
+#get genes in the modules
+gene_module_key <- tibble::enframe(net$colors, name = "gene", value = "module")
+
+gene_module_key_km <- tibble::enframe(net_km$colors, name = "gene", value = "module")
+#save the tables and plots for future use
+readr::write_tsv(gene_module_key,
+                 file = file.path(session_name, "out", "wgcna_gene_to_module.tsv")
+)
+
+readr::write_tsv(gene_module_key_km,
+                 file = file.path(session_name, "out", "wgcna_km_gene_to_module.tsv")
+)
+```
+
+## Network plots
+
+You can also use 3.1_WGCNplots for this part
+
+```{r}
+# Plot the dendrogram for each block and the module colors underneath
+
+for (i in 1:length(net$blockGenes)){
+  plotDendroAndColors(
+    net$dendrograms[[i]],
+    net$colors[net$blockGenes[[i]]],
+    "HC Modules",
+    dendroLabels = FALSE,
+    hang = 0.03,
+    addGuide = TRUE,
+    guideHang = 0.05)
+}
+
+for (i in 1:length(net$blockGenes)){
+  pdf(file = paste0(session_name, "/plots/HC_modules_dendro.", i, ".pdf"), 
+  width = 8,          # Width in inches
+  height = 6,         # Height in inches
+  bg = "white")
+  plotDendroAndColors(
+    net$dendrograms[[i]],
+    net$colors[net$blockGenes[[i]]],
+    "HC Modules",
+    dendroLabels = FALSE,
+    hang = 0.03,
+    addGuide = TRUE,
+    guideHang = 0.05)
+  dev.off()
+}
+```
+
+Plot genes number in the different modules
+
+```{r}
+GenModPlot <- plot_genes_in_modules(net, title = "Number of Genes in Modules by HC")
+GenModPlot_km <- plot_genes_in_modules(net_km, title = "Number of Genes in Modules by k-means")
+print(GenModPlot)
+print(GenModPlot_km)
+
+pdf(file = paste0(session_name, "/plots/genes_in_modules_HC.pdf"), 
+  width = 8,          # Width in inches
+  height = 6,         # Height in inches
+  bg = "white")
+print(GenModPlot)
+dev.off()
+
+pdf(file = paste0(session_name, "/plots/genes_in_modules_KM.pdf"), 
+  width = 8,          # Width in inches
+  height = 6,         # Height in inches
+  bg = "white")
+print(GenModPlot_km)
+dev.off()
+```
+
+plots dendrogram and eigengene representations of (consensus) eigengenes networks.
+
+```{r}
+pdf(file = paste0(session_name, "/plots/modules-HC_EigengenesNet.pdf"), 
+  width = 8,          # Width in inches
+  height = 6,         # Height in inches
+  bg = "white")
+
+plotEigengeneNetworks(orderMEs(net$MEs),
+                      setLabels = "HC modules",
+                      marDendro=c(0,4,1,2), 
+                      marHeatmap=c(3,4,1,2),
+                      cex.lab=0.8,
+                      xLabelsAngle=90,
+                      plotPreservation = "standard")
+dev.off()
+
+pdf(file = paste0(session_name, "/plots/modules-KM_EigengenesNet.pdf"), 
+  width = 8,          # Width in inches
+  height = 6,         # Height in inches
+  bg = "white")
+plotEigengeneNetworks(orderMEs(net_km$MEs),
+                      "KM modules",
+                      marDendro=c(0,4,1,2), 
+                      marHeatmap=c(3,4,1,2),
+                      cex.lab=0.8,
+                      xLabelsAngle=90,
+                      plotPreservation = "standard")
+dev.off()
+```
+
+```{r}
+rm(list = ls())
+```

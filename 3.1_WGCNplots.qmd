@@ -1,0 +1,95 @@
+---
+title: "3.1_WGCNplots"
+author: "Flavio Gabrieli"
+format: html
+editor: visual
+---
+
+## Plotting features of the weighted co-expression networks generated
+
+Resume session
+
+```{r}
+session_name <- "PROVA"
+```
+
+sLoad elements
+
+```{r}
+source("src/3_env_setup.R")
+source(paste0(session_name,"/in/",session_name, "_parameters.R"))
+load(paste0(session_name,"/out/3_networks.Rdata"))
+```
+
+```{r}
+# Plot the dendrogram for each block and the module colors underneath
+
+for (i in 1:length(net$blockGenes)){
+  plotDendroAndColors(
+    net$dendrograms[[i]],
+    net$colors[net$blockGenes[[i]]],
+    "HC Modules",
+    dendroLabels = FALSE,
+    hang = 0.03,
+    addGuide = TRUE,
+    guideHang = 0.05 )
+}
+```
+
+```{r}
+GenModPlot <- plot_genes_in_modules(net, title = "Number of Genes in Modules by HC")
+GenModPlot_km <- plot_genes_in_modules(net_km, title = "Number of Genes in Modules by k-means")
+print(GenModPlot)
+print(GenModPlot_km)
+
+ggsave(
+  filename = paste0("plots/", session_name,"_modules-HC_barplot.png"),
+  plot = GenModPlot,
+  width = 8,          # Width in inches
+  height = 6,         # Height in inches
+  dpi = 600,
+  bg = "white"
+)
+
+ggsave(
+  filename = paste0("plots/", session_name,"_modules-KM_barplot.png"),
+  plot = GenModPlot_km,
+  width = 8,          # Width in inches
+  height = 6,         # Height in inches
+  dpi = 600,
+  bg = "white"
+)
+```
+
+```{r}
+pdf(file = paste0("plots/", session_name,"_modules-HC_EigengenesNet.pdf"), 
+  width = 8,          # Width in inches
+  height = 6,         # Height in inches
+  bg = "white")
+
+plotEigengeneNetworks(orderMEs(net$MEs),
+                      setLabels = "HC modules",
+                      marDendro=c(0,4,1,2), 
+                      marHeatmap=c(3,4,1,2),
+                      cex.lab=0.8,
+                      xLabelsAngle=90,
+                      plotPreservation = "standard")
+dev.off()
+
+pdf(file = paste0("plots/", session_name,"_modules-KM_EigengenesNet.pdf"), 
+  width = 8,          # Width in inches
+  height = 6,         # Height in inches
+  bg = "white")
+plotEigengeneNetworks(orderMEs(net_km$MEs),
+                      "KM modules",
+                      marDendro=c(0,4,1,2), 
+                      marHeatmap=c(3,4,1,2),
+                      cex.lab=0.8,
+                      xLabelsAngle=90,
+                      plotPreservation = "standard")
+dev.off()
+```
+
+```{r}
+rm(list = ls())
+```

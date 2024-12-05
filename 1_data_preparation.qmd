@@ -1,0 +1,107 @@
+---
+title: "WGCNA_step1_data_preparation"
+format: html
+editor: visual
+---
+
+# Expression data preparation for WGCNA
+
+## Environment setup
+
+```{r}
+source("set_parameters.R")
+source("src/1_env_setup.R")
+create_session_env(session_name)
+```
+
+## Data Importing
+
+It is pivotal that every file is in the "in/" folder.
+
+```{r}
+data <- import_data(
+  counts_file = count.matrix,
+  gene_length_column = gene.length.column,
+  metadata_file = metadata.filename,
+  traits_file = traits.filename,
+  traits_sample_id = "sample",
+  traits_sep = ";"
+)
+```
+
+```{r}
+#creating the "cross" column representing the experimental conditions
+data$metadata["cross"]<- as.factor(paste0(data$metadata[["mat.gen"]], "_", data$metadata[["mat.ploidy"]], "X", data$metadata[["pat.gen"]], "_", data$metadata[["pat.ploidy"]]))
+```
+
+## Quality check
+
+```{r}
+#check for missing data
+gsg <- missing_QC(data$counts)
+
+#remove genes missing read counts
+data$data_no_missing <- data$counts[gsg$goodGenes == T,]
+
+#identify outlier samples
+HC_QC(data$data_no_missing, metadata = data$metadata, color_col = "cross")
+pca_qc <- PCA_QC(data$data_no_missing, metadata = data$metadata, color_col = "cross")
+
+pdf(file = paste0(session_name,"/plots/clustering_QC.pdf"), 
+  width = 8,          # Width in inches
+  height = 6,         # Height in inches
+  bg = "white")
+HC_QC(data$data_no_missing, metadata = data$metadata, color_col = "cross")
+dev.off()
+
+pdf(file = paste0(session_name,"/plots/PCA_QC.pdf"), 
+  width = 8,          # Width in inches
+  height = 6,         # Height in inches
+  bg = "white")
+pca_qc
+dev.off()
+```
+
+## Data filtering
+
+### Remove outlying samples
+
+```{r}
+data <- exclude_samples(data, samples = c("E2"))
+```
+
+### Remove low expressed genes
+
+Pick one of the following option:
+
+1.  simple filtering on overall low detected genes - remove genes having less than n reads across all samples
+
+2.  remove genes with less than n reads in at least m samples
+
+3.  remove all genes having less than m reads in at least p of the samples; where p is a number between 0 (no sample) and 1 (every sample)
+
+```{r}
+data$filtered_data = low_reads_filtering(data$counts, method = filtering_method, n = n, m = m, p = p)
+```
+
+## Data normalization
+
+```{r}
+data$exprData <- vst_normalization(data)
+```
+
+## Export prepared data
+
+```{r}
+#optionally remove raw counts and filtered raw counts
+data$counts <- NULL
+data$filtered_data <- NULL
+```
+
+save prepared data and clear global environment
+
+```{r}
+save(data, file = file.path(session_name, "out/1_prepared_data.RData"))
+
+rm(list = ls())
+```
