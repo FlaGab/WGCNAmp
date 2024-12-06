@@ -1,6 +1,6 @@
 #parameters setting
 
-session_name <- "PROVA"
+session_name <- "TT8_RNAseq"
 
 #input files
 count.matrix <- "in/count_matrix.csv"

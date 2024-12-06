@@ -21,11 +21,12 @@ hub_genes <- function(network, module, exprData = NULL, TOM = TOM, q_kWithin = 0
         }
       }
     
-    module_hubs <- network$IMconnectivity[
-      network$IMconnectivity$kWithin > quantile(network$IMconnectivity$kWithin, q_kWithin) &
-      abs(network$geneMM[, paste0("ME", module)]) > minMM &
-      rownames(network$IMconnectivity) %in% names(network$colors[network$colors == module]),
-    ]
+    module_genes <- names(network$colors[network$colors == module])
+    module_hubs <- network$IMconnectivity[module_genes, , drop = FALSE] %>%
+      subset(
+        kWithin > quantile(kWithin, q_kWithin) &
+          abs(network$geneMM[module_genes, paste0("ME", module)]) > minMM
+      )
   }
   
   return(module_hubs)
