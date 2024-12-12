@@ -5,3 +5,7 @@ in
 .Rhistory
 WGCNAmp.Rproj
 set_parameters.R
+.$WGCNA_arch.drawio.bkp
+WGCNA_arch.drawio
+.RData
+.Rprofile

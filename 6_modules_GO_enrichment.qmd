@@ -1,0 +1,50 @@
+---
+title: "6_modules_GO"
+author: "Flavio Gabrieli"
+format: html
+editor: visual
+---
+
+# GO enrichment of modules
+
+Resume session
+
+```{r}
+session_name <- "TT8_RNAseq"
+```
+
+Load environment
+
+```{r}
+source("src/GO_env_setup.R")
+modules_km <- read.table(paste0(session_name,"/out/wgcna_km_gene_to_module.tsv"), header = T)
+modules_hc<- read.table(paste0(session_name,"/out/wgcna_gene_to_module.tsv"), header = T)
+source("src/annotate_TAIRsymbols.R")
+```
+
+run GO
+
+```{r}
+modules <- c("salmon", "cyan", "lightgreen", "skyblue")
+```
+
+```{r}
+GO_enrichment(gma = modules_km,
+              modules = modules,
+              session_name = session_name,
+              keyType = "TAIR",
+              ont = "BP",
+              )
+```
+
+```{r}
+#convert gene names to ENTREZ IDs
+modules_km_ncbi <- data.frame(gene = TAIR_to_ENTREZ(modules_km$gene), module = modules_km$module)
+
+#perform kegg enrichment
+KEGG_enrichment(gma = modules_km_ncbi,
+                modules = modules,
+                session_name = session_name,
+                keyType = "ncbi-geneid",
+                org = "ath")
+```

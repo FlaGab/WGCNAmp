@@ -10,7 +10,7 @@ editor: visual
 Resume session
 
 ```{r}
-session_name <- "PROVA"
+session_name <- "TT8_RNAseq"
 ```
 
 ```{r}
@@ -21,16 +21,12 @@ source(paste0(session_name,"/in/", session_name,"_parameters.R"))
 ```
 
 ```{r}
-#set TOMtype parameter (signed or unsigned)
-TOMtype <- "signed"
-```
-
-```{r}
 A <- adjacency(data$exprData, type = network_type, power = power_threshold)
 TOM <- TOMsimilarity(A, TOMType = TOMtype)
 
 #save TOM file for downstream analysis
 save(TOM, file = paste0(session_name, "/out/TOMfiles/TOM-sbs.Rdata"))
+save(A, file = aste0(session_name, "/out/adjacency_matrix.Rdata"))
 
 rm(A)
 #hierarchical clustering
@@ -64,7 +60,7 @@ net$dendro <- NULL
 net$oldDendro <- NULL
 net$oldMEs <- NULL
 names(net)[names(net) == "newMEs"] <- "MEs"
-net$TOMFiles <- paste0("out/TOMfiles/", session_name,"_TOM-sbs.Rdata")
+net$TOMFiles <- paste0(session_name,"/out/TOMfiles/TOM-sbs.Rdata")
 net$blockGenes <- list(c(1:ncol(data$exprData)))
 ```
 

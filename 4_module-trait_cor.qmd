@@ -10,7 +10,7 @@ editor: visual
 Resume session
 
 ```{r}
-session_name <- "PROVA"
+session_name <- "TT8_RNAseq"
 ```
 
 Load environment
@@ -112,4 +112,8 @@ correlation_categorical_var_lm(network = net, binary_matrix = binary.matrix, plo
 dev.off()
 
 
+```
+
+```{r}
+rm(list = ls())
 ```

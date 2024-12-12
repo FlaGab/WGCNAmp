@@ -9,7 +9,7 @@ editor: visual
 Specify session name
 
 ```{r}
-session_name <- "PROVA"
+session_name <- "TT8_RNAseq"
 ```
 
 Load environment setup, session parameters and normalized data

@@ -34,7 +34,7 @@ net <- blockwiseModules(data$exprData,
                           mergeCutHeight = mergeCutHeight,
                           numericLabels = FALSE, # Let's use numbers instead of colors for module labels
                           saveTOMs = TRUE,
-                          saveTOMFileBase = paste0(session_name, "/out/TOMfiles/",session_name,"_TOM-bw"),
+                          saveTOMFileBase = paste0(session_name, "/out/TOMfiles/TOM-bw"),
                           randomSeed = rs, # there's some randomness associated with this calculation so we should set a seed
 )
 ```
