@@ -1,0 +1,86 @@
+---
+title: "6_genes_visualization"
+author: "Flavio Gabrieli"
+format: html
+editor: visual
+---
+
+## Visualization of gene expression in modules
+
+Resume session
+
+```{r}
+session_name <- "fertilization_v1"
+```
+
+load environment
+
+```{r}
+source("src/7_env_setup.R")
+```
+
+normalize data
+
+```{r}
+dds <- DESeqDataSetFromMatrix(data$data_no_missing, colData = data$metadata, design = ~ stage)
+dds <- DESeq2::estimateSizeFactors(dds)
+norm_counts <- as.data.frame(counts(dds, normalized=TRUE))
+```
+
+heatmap modules eigenvalues
+
+```{r}
+pheatmap(t(net$MEs), annotation_col = data$metadata[-2], cluster_cols = F)
+```
+
+```{r}
+data$metadata <- mutate(data$metadata, sample = paste0(stage, "_", rep))
+
+selected_genes <- names(net_km$colors[net_km$colors == "yellow"])
+
+df <- cbind(data$metadata, t(norm_counts))
+df_long <- df %>%
+  select(sample, stage, all_of(selected_genes)) %>%
+  pivot_longer(cols = selected_genes,
+               names_to = "Gene", 
+    values_to = "Value")
+
+matplot(x= sample, y=df[,selected_genes], type = "l")
+
+ggplot(data = df_long, aes(x = sample, y = Value)) +
+  geom_line()
+  
+```
+
+```{r}
+module_df <- as.data.frame(net_km$colors)
+colnames(module_df) <- "color"
+module_df$gene_id <- rownames(module_df)
+
+submod = module_df %>% subset(color %in% c( "yellow", "turquoise", "blue", "brown", "green", "red"))
+
+subexpr = norm_counts[rownames(submod),]
+
+submod_df = data.frame(subexpr) %>%
+   mutate(
+     gene_id = row.names(.)
+   ) %>%
+   pivot_longer(-gene_id) %>%
+   mutate(
+     module = module_df[gene_id,]$color
+   )
+
+# Define your desired order
+desired_order <- rownames(data$metadata)
+
+# Convert name to a factor with specified order
+submod_df$name <- factor(submod_df$name, levels = desired_order)
+
+
+ggplot(submod_df, aes(x = name, y = value, group = gene_id)) +
+   geom_line(aes(color = module)) +scale_color_identity()+
+   theme_bw() +
+   theme(axis.text.x = element_text(angle = 90)) +
+   facet_grid(rows = vars(module), scales = "free_y") +
+   labs(x = "stage", y = "normalized expression")
+```
