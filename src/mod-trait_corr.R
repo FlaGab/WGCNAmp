@@ -44,43 +44,292 @@ continuous_traits_correlations <- function(data = data, network = net, method = 
   return(CLP)
 }
 
-binary_contrast_matrix <- function(data, variables, vsAll = TRUE, verbose = TRUE) {
+detect_categorical_variables <- function(data) {
+  if (!is.data.frame(data)) {
+    stop("'data' must be a data frame.")
+  }
+
+  names(data)[vapply(
+    data,
+    function(column) {
+      is.factor(column) || is.character(column) || is.logical(column)
+    },
+    logical(1)
+  )]
+}
+
+prepare_categorical_metadata <- function(data,
+                                         variables = NULL,
+                                         reference_levels = NULL) {
   # Validate inputs
   if (!is.data.frame(data)) {
     stop("'data' must be a data frame.")
   }
-  if (is.null(variables) || length(variables) == 0) {
-    stop("Please specify at least one variable for binarization.")
+
+  if (is.null(variables)) {
+    variables <- detect_categorical_variables(data)
   }
+
+  if (!is.character(variables) || length(variables) == 0L) {
+    stop(
+      "No categorical variables were selected. Supply column names in ",
+      "'variables', or convert categorical metadata columns to factors."
+    )
+  }
+
+  variables <- unique(variables)
+
   if (!all(variables %in% colnames(data))) {
     missing_vars <- variables[!variables %in% colnames(data)]
-    stop(paste("The following variables are not in the data:", paste(missing_vars, collapse = ", ")))
+    stop(
+      "The following categorical variables are not in the data: ",
+      paste(missing_vars, collapse = ", ")
+    )
   }
-  
+
+  if (!is.null(reference_levels)) {
+    reference_levels <- unlist(reference_levels, use.names = TRUE)
+
+    if (is.null(names(reference_levels)) ||
+        any(names(reference_levels) == "") ||
+        anyDuplicated(names(reference_levels))) {
+      stop("'reference_levels' must be a uniquely named vector or list.")
+    }
+
+    unknown_reference_variables <- setdiff(names(reference_levels), variables)
+    if (length(unknown_reference_variables) > 0L) {
+      stop(
+        "Reference levels were supplied for unselected variables: ",
+        paste(unknown_reference_variables, collapse = ", ")
+      )
+    }
+  }
+
+  prepared_data <- data
+
+  for (variable in variables) {
+    values <- droplevels(factor(prepared_data[[variable]]))
+
+    if (nlevels(values) < 2L) {
+      stop(
+        "Categorical variable '", variable,
+        "' must contain at least two observed levels."
+      )
+    }
+
+    if (!is.null(reference_levels) && variable %in% names(reference_levels)) {
+      reference <- unname(reference_levels[[variable]])
+
+      if (length(reference) != 1L || is.na(reference) ||
+          !(reference %in% levels(values))) {
+        stop(
+          "Reference level '", reference, "' is not an observed level of '",
+          variable, "'. Available levels: ",
+          paste(levels(values), collapse = ", ")
+        )
+      }
+
+      values <- stats::relevel(values, ref = reference)
+    }
+
+    prepared_data[[variable]] <- values
+  }
+
+  list(data = prepared_data, variables = variables)
+}
+
+drop_redundant_binary_contrasts <- function(binary_matrix, variables) {
+  if (ncol(binary_matrix) < 2L) {
+    return(binary_matrix)
+  }
+
+  contrast_variables <- vapply(
+    colnames(binary_matrix),
+    function(contrast) {
+      matches <- variables[startsWith(contrast, paste0(variables, ": "))]
+      if (length(matches) == 0L) NA_character_ else matches[[1L]]
+    },
+    character(1)
+  )
+
+  redundant <- rep(FALSE, ncol(binary_matrix))
+
+  for (variable in unique(stats::na.omit(contrast_variables))) {
+    positions <- which(contrast_variables == variable)
+    signatures <- vapply(
+      positions,
+      function(position) {
+        paste(binary_matrix[, position], collapse = "\r")
+      },
+      character(1)
+    )
+    redundant[positions] <- duplicated(signatures)
+  }
+
+  dropped <- colnames(binary_matrix)[redundant]
+  result <- binary_matrix[, !redundant, drop = FALSE]
+  attr(result, "dropped_redundant_contrasts") <- dropped
+  result
+}
+
+binary_contrast_matrix <- function(data,
+                                   variables = NULL,
+                                   reference_levels = NULL,
+                                   vsAll = TRUE,
+                                   includePairwise = TRUE,
+                                   minCount = 1,
+                                   drop_redundant = TRUE,
+                                   verbose = TRUE) {
+  prepared <- prepare_categorical_metadata(
+    data = data,
+    variables = variables,
+    reference_levels = reference_levels
+  )
+
+  if (!is.logical(vsAll) || length(vsAll) != 1L || is.na(vsAll)) {
+    stop("'vsAll' must be TRUE or FALSE.")
+  }
+  if (!is.logical(includePairwise) ||
+      length(includePairwise) != 1L ||
+      is.na(includePairwise)) {
+    stop("'includePairwise' must be TRUE or FALSE.")
+  }
+  if (!vsAll && !includePairwise) {
+    stop("At least one contrast type must be enabled.")
+  }
+
   # Generate binary matrix
-  bin.mat <- binarizeCategoricalColumns(data,
-                                        considerColumns = variables,
-                                        minCount = 1,
-                                        includePairwise = TRUE,
-                                        includeLevelVsAll = vsAll,
-                                        dropUninformative = TRUE,
-                                        includePrefix = TRUE,
-                                        prefixSep = ": ",
-                                        levelSep = " vs. ")
+  bin.mat <- WGCNA::binarizeCategoricalColumns(
+    prepared$data[, prepared$variables, drop = FALSE],
+    convertColumns = prepared$variables,
+    considerColumns = prepared$variables,
+    minCount = minCount,
+    includePairwise = includePairwise,
+    includeLevelVsAll = vsAll,
+    dropUninformative = TRUE,
+    includePrefix = TRUE,
+    prefixSep = ": ",
+    levelSep = " vs. "
+  )
   rownames(bin.mat) <- rownames(data)
-  
+
+  if (ncol(bin.mat) == 0L) {
+    stop("No informative binary contrasts could be generated.")
+  }
+
+  if (drop_redundant) {
+    bin.mat <- drop_redundant_binary_contrasts(
+      binary_matrix = bin.mat,
+      variables = prepared$variables
+    )
+  }
+
   # Print summary if verbose is TRUE
   if (verbose) {
-    message("Binary matrix generated with dimensions: ", nrow(bin.mat), " rows and ", ncol(bin.mat), " columns.")
+    message("Categorical variables: ", paste(prepared$variables, collapse = ", "))
+    for (variable in prepared$variables) {
+      message(
+        "Reference level for '", variable, "': ",
+        levels(prepared$data[[variable]])[[1L]]
+      )
+    }
+
+    dropped <- attr(bin.mat, "dropped_redundant_contrasts")
+    if (length(dropped) > 0L) {
+      message(
+        "Dropped redundant within-variable contrasts: ",
+        paste(dropped, collapse = ", ")
+      )
+    }
+
+    message(
+      "Binary matrix generated with dimensions: ",
+      nrow(bin.mat), " rows and ", ncol(bin.mat), " columns."
+    )
     message("Contrasts:")
-    cat(paste(seq_along(colnames(bin.mat)), colnames(bin.mat), sep = ". "), sep = "\n")
+    cat(paste0("- ", colnames(bin.mat)), sep = "\n")
   }
-  
+
   # Return the binary matrix
   return(bin.mat)
 }
 
-correlation_catgorical_var <- function(network = net, binary_matrix = binary.matrix){
+select_binary_contrasts <- function(binary_matrix,
+                                    include = NULL,
+                                    exclude = NULL,
+                                    verbose = TRUE) {
+  if (!is.matrix(binary_matrix) && !is.data.frame(binary_matrix)) {
+    stop("'binary_matrix' must be a matrix or data frame.")
+  }
+
+  available <- colnames(binary_matrix)
+  if (is.null(available)) {
+    stop("'binary_matrix' must have contrast names.")
+  }
+
+  if (!is.null(include)) {
+    missing_includes <- setdiff(include, available)
+    if (length(missing_includes) > 0L) {
+      stop(
+        "Requested contrasts were not generated: ",
+        paste(missing_includes, collapse = ", "),
+        ". Available contrasts: ", paste(available, collapse = ", ")
+      )
+    }
+    selected <- unique(include)
+  } else {
+    selected <- available
+  }
+
+  if (!is.null(exclude)) {
+    unknown_excludes <- setdiff(exclude, available)
+    if (length(unknown_excludes) > 0L) {
+      stop(
+        "Contrasts requested for exclusion were not generated: ",
+        paste(unknown_excludes, collapse = ", ")
+      )
+    }
+    selected <- setdiff(selected, exclude)
+  }
+
+  if (length(selected) == 0L) {
+    stop("Contrast selection removed every generated contrast.")
+  }
+
+  result <- binary_matrix[, selected, drop = FALSE]
+
+  if (verbose) {
+    message("Selected contrasts: ", paste(selected, collapse = ", "))
+  }
+
+  result
+}
+
+align_binary_matrix <- function(network, binary_matrix) {
+  eigengene_samples <- rownames(network$MEs)
+  contrast_samples <- rownames(binary_matrix)
+
+  if (is.null(eigengene_samples) || is.null(contrast_samples)) {
+    stop("Network eigengenes and the binary matrix must have sample row names.")
+  }
+
+  if (!setequal(eigengene_samples, contrast_samples)) {
+    missing_from_contrasts <- setdiff(eigengene_samples, contrast_samples)
+    missing_from_network <- setdiff(contrast_samples, eigengene_samples)
+    stop(
+      "Network eigengenes and binary contrasts contain different samples. ",
+      "Missing from contrasts: ",
+      paste(missing_from_contrasts, collapse = ", "),
+      "; missing from network: ",
+      paste(missing_from_network, collapse = ", ")
+    )
+  }
+
+  binary_matrix[eigengene_samples, , drop = FALSE]
+}
+
+correlation_categorical_var <- function(network, binary_matrix){
+  binary_matrix <- align_binary_matrix(network, binary_matrix)
   
   #define number of genes and samples
   nSamples = nrow(binary_matrix)
@@ -89,7 +338,7 @@ correlation_catgorical_var <- function(network = net, binary_matrix = binary.mat
   module.trait.corr <- cor(network$MEs, 
                            binary_matrix,
                            use = "p",
-                           method = "p") #change the method based on your data
+                           method = "pearson")
   module.trait.corr.pvals <- corPvalueStudent(module.trait.corr, nSamples)
   
   #visualize module-trait association
@@ -98,8 +347,8 @@ correlation_catgorical_var <- function(network = net, binary_matrix = binary.mat
   heatmap.data$Row.names <- NULL
   
   CLP <- CorLevelPlot(heatmap.data,
-                      x = names(heatmap.data)[(ncol(heatmap.data)-ncol(binary.matrix)+1):ncol(heatmap.data)],
-                      y = names(heatmap.data)[1:(ncol(heatmap.data)-ncol(binary.matrix))],
+                      x = names(heatmap.data)[(ncol(heatmap.data)-ncol(binary_matrix)+1):ncol(heatmap.data)],
+                      y = names(heatmap.data)[1:(ncol(heatmap.data)-ncol(binary_matrix))],
                       col = c("blue1", "skyblue", "white", "pink", "red"),
                       rotLabX = 30,
                       plotRsquared = F
@@ -108,9 +357,14 @@ correlation_catgorical_var <- function(network = net, binary_matrix = binary.mat
   return(list(r_vals = module.trait.corr, p_vals = module.trait.corr.pvals, hm = CLP))
 }
 
-correlation_categorical_var_lm <- function(network = net, 
-                                           binary_matrix = binary.matrix, 
+# Backward-compatible alias for the original misspelled function name.
+correlation_catgorical_var <- correlation_categorical_var
+
+correlation_categorical_var_lm <- function(network,
+                                           binary_matrix,
                                            plot_type = "dotplot") {
+  binary_matrix <- align_binary_matrix(network, binary_matrix)
+
   # Initialize an empty list to store results
   results <- list()
   
