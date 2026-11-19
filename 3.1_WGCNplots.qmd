@@ -18,7 +18,12 @@ sLoad elements
 ```{r}
 source("src/3_env_setup.R")
 source(paste0(session_name,"/in/",session_name, "_parameters.R"))
-load(paste0(session_name,"/out/3_networks.Rdata"))
+network_result <- readRDS(
+  file.path(session_name, "out", "3_networks.rds")
+)
+
+net <- network_result$network
+net_km <- network_result$network_kmeans
 ```
 
 ```{r}

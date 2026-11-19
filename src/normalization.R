@@ -1,21 +1,51 @@
-#normalization script
+# Normalization functions
 
-vst_normalization <- function(data){
-  
-  # Create a `DESeqDataSet` object, normalize expression data
+normalize_expression_data <- function(data) {
+  required_components <- c("filtered_data", "metadata")
+  missing_components <- setdiff(required_components, names(data))
+
+  if (length(missing_components) > 0L) {
+    stop(
+      "Missing required data components: ",
+      paste(missing_components, collapse = ", ")
+    )
+  }
+
+  if (!identical(colnames(data$filtered_data), rownames(data$metadata))) {
+    stop(
+      "The samples in 'filtered_data' and 'metadata' must have the same ",
+      "names and order before normalization."
+    )
+  }
+
+  # Estimate size factors once so that both output matrices are derived from
+  # the same DESeq2 object.
   dds <- DESeqDataSetFromMatrix(
-    countData = data$filtered_data, # Our prepped data frame with counts
-    colData = data$metadata, # Data frame with annotation for our samples
-    design = ~1 # Here we do not need to specify a model because we are not performing a differential expression analysis
+    countData = data$filtered_data,
+    colData = data$metadata,
+    design = ~1
   )
-  
-  # Normalize and transform the data in the `DESeqDataSet` object using the `vst()`
-  dds_norm <- vst(dds)
-  
-  # Retrieve the normalized data from the `DESeqDataSet` and transpose it for WGCNA
-  normalized_counts <- t(assay(dds_norm))
-  
-  return(normalized_counts)
+  dds <- estimateSizeFactors(dds)
+
+  # Keep size-factor-normalized counts for downstream expression plots.
+  normalized_counts <- as.data.frame(
+    counts(dds, normalized = TRUE),
+    check.names = FALSE
+  )
+
+  # WGCNA expects samples in rows and genes in columns.
+  dds_vst <- vst(dds)
+  expression_vst <- t(assay(dds_vst))
+
+  list(
+    expression_vst = expression_vst,
+    normalized_counts = normalized_counts
+  )
+}
+
+# Retain the original helper for compatibility with existing analyses.
+vst_normalization <- function(data) {
+  normalize_expression_data(data)$expression_vst
 }
 
 

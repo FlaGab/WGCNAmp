@@ -19,12 +19,24 @@ load environment
 source("src/7_env_setup.R")
 ```
 
-normalize data
+Load the normalized counts generated during data preparation
 
 ```{r}
-dds <- DESeqDataSetFromMatrix(data$data_no_missing, colData = data$metadata, design = ~ stage)
-dds <- DESeq2::estimateSizeFactors(dds)
-norm_counts <- as.data.frame(counts(dds, normalized=TRUE))
+if (is.null(data$normalized_counts)) {
+  stop(
+    "The prepared-data artifact does not contain normalized counts. ",
+    "Re-run 1_data_preparation.qmd with the updated normalization step."
+  )
+}
+
+norm_counts <- data$normalized_counts
+
+if (!setequal(colnames(norm_counts), rownames(data$metadata))) {
+  stop("Normalized counts and metadata contain different sample identifiers.")
+}
+
+# Keep metadata in exactly the same sample order as the normalized counts.
+data$metadata <- data$metadata[colnames(norm_counts), , drop = FALSE]
 ```
 
 heatmap modules eigenvalues

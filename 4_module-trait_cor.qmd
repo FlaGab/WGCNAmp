@@ -17,9 +17,15 @@ Load environment
 
 ```{r}
 source("src/4_env_setup.R")
-load(paste0(session_name, "/out/3_networks.Rdata"))
 load(paste0(session_name, "/out/1_prepared_data.Rdata"))
 source(paste0(session_name, "/in/", session_name,"_parameters.R"))
+
+network_result <- readRDS(
+  file.path(session_name, "out", "3_networks.rds")
+)
+
+net <- network_result$network
+net_km <- network_result$network_kmeans
 ```
 
 ## Continuous variables

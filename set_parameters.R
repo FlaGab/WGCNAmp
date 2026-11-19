@@ -9,6 +9,7 @@ metadata.filename <- "in/metadata.csv"
 traits.filename <- "in/traits.csv"
 
 #filtering parameters
+excluded_samples <- c("E2") #samples to be excluded from the analysis
 filtering_method <- "2"
 
 n <- 10 #number of reads

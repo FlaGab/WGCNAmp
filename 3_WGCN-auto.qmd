@@ -60,7 +60,16 @@ names(net_km)[names(net_km) == "moduleColors"] <- "colors"
 ## Save network and module tables
 
 ```{r}
-save(net, net_km, file = paste0(session_name, "/out/networks.Rdata"))
+network_result <- list(
+  network = net,
+  network_kmeans = net_km,
+  method = network_method
+)
+
+saveRDS(
+  network_result,
+  file.path(session_name, "out", "3_networks.rds")
+)
 ```
 
 ```{r}

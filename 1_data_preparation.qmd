@@ -87,13 +87,18 @@ data$filtered_data = low_reads_filtering(data$counts, method = filtering_method,
 ## Data normalization
 
 ```{r}
-data$exprData <- vst_normalization(data)
+normalization_result <- normalize_expression_data(data)
+data$exprData <- normalization_result$expression_vst
+data$normalized_counts <- normalization_result$normalized_counts
+rm(normalization_result)
 ```
 
 ## Export prepared data
 
 ```{r}
-#optionally remove raw counts and filtered raw counts
+# The size-factor-normalized counts are retained in `data$normalized_counts`
+# for downstream expression plots. Only the redundant raw intermediates are
+# removed from the saved object.
 data$counts <- NULL
 data$filtered_data <- NULL
 ```

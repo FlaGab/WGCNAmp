@@ -25,8 +25,14 @@ A <- adjacency(data$exprData, type = network_type, power = power_threshold)
 TOM <- TOMsimilarity(A, TOMType = TOMtype)
 
 #save TOM file for downstream analysis
-save(TOM, file = paste0(session_name, "/out/TOMfiles/TOM-sbs.Rdata"))
-save(A, file = aste0(session_name, "/out/adjacency_matrix.Rdata"))
+saveRDS(
+  TOM, 
+  file.path(session_name, "out", "TOMfiles", "TOM-sbs.Rdata")
+  )
+saveRDS(
+  A,
+  file.path(session_name, "out", "adjacency_matrix.rds")
+)
 
 rm(A)
 #hierarchical clustering
