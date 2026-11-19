@@ -9,7 +9,7 @@ editor: visual
 Specify session name
 
 ```{r}
-session_name <- "TT8_RNAseq"
+session_name <- "WGCNA_test"
 ```
 
 Load environment setup, session parameters and normalized data
@@ -70,9 +70,25 @@ dev.off()
 ```
 
 ```{r}
-#manually set power threshold to use in WGCNA...
+#manually set power threshold to use in WGCNA or use the powerEstimate
 
-power_threshold <- 19
+power_mode <- "manual"  # "manual" or "automatic"
+
+manual_power <- 19
+
+power_threshold <- switch(
+  power_mode,
+  manual = manual_power,
+  automatic = sft$powerEstimate,
+  stop("power_mode must be 'manual' or 'automatic'")
+)
+
+if (length(power_threshold) != 1L || !is.finite(power_threshold)) {
+  stop(
+    "No valid soft-threshold power was selected. ",
+    "Review the soft-threshold report and specify a manual power."
+  )
+}
 ```
 
 ```{r}

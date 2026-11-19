@@ -71,9 +71,26 @@ import_data <- function(counts_file, gene_length_column = NULL, counts_sep = ","
   metadata <- import_metadata(file_path = metadata_file, sep = metadata_sep, sample_id = metadata_sample_id)
   
   # Check sample correspondence
-  if (!all(colnames(counts$data) %in% rownames(metadata))) {
-    stop("Mismatch between metadata sample names and counts sample names.")
+
+  sample_ids <- colnames(counts$data)
+
+  if (!setequal(sample_ids, rownames(metadata))) {
+    stop("Counts and metadata contain different sample identifiers.")
   }
+
+  metadata <- metadata[sample_ids, , drop = FALSE]
+
+  if (!is.null(traits)) {
+    if (!setequal(sample_ids, rownames(traits))) {
+      stop("Counts and traits contain different sample identifiers.")
+    }
+  traits <- traits[sample_ids, , drop = FALSE]
+  }
+
+  stopifnot(
+    identical(sample_ids, rownames(metadata)),
+    is.null(traits) || identical(sample_ids, rownames(traits))
+  )
   
   # Optional: Import traits
   traits <- NULL

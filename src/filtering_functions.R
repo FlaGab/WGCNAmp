@@ -2,24 +2,30 @@
 
 #function for excluding outlier samples
 
-exclude_samples <- function(data, samples = NULL){
-  
-  if(!is.null(samples)){
-    if(!is.vector(samples)){
-      stop("The input 'samples' must be a vector. select a subset of:\n ", paste(rownames(data$metadata), collapse = "\n"))
-    }
-    if(!(samples %in% rownames(data$metadata))){
-      stop("you must specify samples in the data submitted. select a subset of:\n ", paste(rownames(data$metadata), collapse = "\n"))
-    }
-    else{
-      out <- list (counts = data$data_no_missing[, !(colnames(data$data_no_missing) %in% samples)],
-                   metadata = data$metadata[!(rownames(data$metadata) %in% samples), ],
-                   traits = filter(data$traits, rownames(data$traits) != samples),#data$traits[!(rownames(data$traits) %in% samples), ],
-                   gene_length = data$gene_length)
-    }
+exclude_samples <- function(data, samples = character()) {
+  if (!is.character(samples)) {
+    stop("'samples' must be a character vector.")
   }
-  
-  return(out)
+
+  unknown <- setdiff(samples, rownames(data$metadata))
+  if (length(unknown) > 0L) {
+    stop("Unknown samples: ", paste(unknown, collapse = ", "))
+  }
+
+  keep <- !colnames(data$data_no_missing) %in% samples
+  counts <- data$data_no_missing[, keep, drop = FALSE]
+  sample_ids <- colnames(counts)
+
+  list(
+    counts = counts,
+    metadata = data$metadata[sample_ids, , drop = FALSE],
+    traits = if (is.null(data$traits)) {
+      NULL
+    } else {
+      data$traits[sample_ids, , drop = FALSE]
+    },
+    gene_length = data$gene_length
+  )
 }
 
 #function for filtering low expressed genes 

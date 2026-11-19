@@ -1,6 +1,6 @@
 #parameters setting
 
-session_name <- "TT8_RNAseq"
+session_name <- "WGCNA_test"
 
 #input files
 count.matrix <- "in/count_matrix.csv"

@@ -67,7 +67,7 @@ dev.off()
 ### Remove outlying samples
 
 ```{r}
-data <- exclude_samples(data, samples = c("E2"))
+data <- exclude_samples(data, samples = excluded_samples)
 ```
 
 ### Remove low expressed genes

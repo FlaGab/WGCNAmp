@@ -59,8 +59,14 @@ write.table(net$IMconnectivity, file = paste0(session_name,"/out/intramodular_co
 ```{r}
 net_km$geneMM <- cor(data$exprData, net_km$MEs)
 net$geneMM <- cor(data$exprData, net$MEs)
-write.table(net_km$geneMM, file = paste0(session_name,"/out/geneMM_km.csv"))
-write.table(net$IMconnectivity, file = paste0(session_name,"/out/geneMM_hc.csv"))
+readr::write_csv(
+  tibble::rownames_to_column(as.data.frame(net_km$geneMM), "gene"),
+  file.path(session_name, "out", "geneMM_km.csv")
+)
+readr::write_csv(
+  tibble::rownames_to_column(as.data.frame(net$geneMM), "gene"),
+  file.path(session_name, "out", "geneMM_hc.csv")
+)
 ```
 
 4.  **Combine Connectivity and Module Membership to identify hub genes**
@@ -165,7 +171,12 @@ exportNetworkToCytoscape(modTOM,
 ```
 
 ```{r}
-A <-adjacency(data$exprData)
+A <- adjacency(
+  data$exprData,
+  power = power_threshold,
+  type = network_type,
+  corFnc = corType
+)
 
 TOMgraph <- graph_from_adjacency_matrix(A[inModule, inModule], mode = "undirected", weighted =TRUE, diag = F)
 
