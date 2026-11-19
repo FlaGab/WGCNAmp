@@ -10,7 +10,7 @@ editor: visual
 Resume session
 
 ```{r}
-session_name <- "TT8_RNAseq"
+session_name <- "WGCNA_test"
 ```
 
 Load environment
@@ -20,12 +20,9 @@ source("src/5_env_setup.R")
 load(paste0(session_name, "/out/1_prepared_data.Rdata"))
 source(paste0(session_name, "/in/", session_name,"_parameters.R"))
 
-network_result <- readRDS(
+load(
   file.path(session_name, "out", "3_networks.rds")
 )
-
-net <- network_result$network
-net_km <- network_result$network_kmeans
 ```
 
 ## Hub genes
@@ -33,7 +30,7 @@ net_km <- network_result$network_kmeans
 Load TOM
 
 ```{r}
-load(net$TOMFiles)
+load(file.path(session_name, "out", "TOMfiles", "TOM-sbs.Rdata"))
 ```
 
 2.  Calculate Intramodular Connectivity
@@ -78,7 +75,7 @@ readr::write_csv(
     -   Strong module membership (e.g., \|MM\| \> 0.8).
 
 ```{r}
-moduleColor = "cornflowerblue" # select module to analyze
+moduleColor = "blue" # select module to analyze
 network_name = "net"
 
 assign(paste0(moduleColor, "_",network_name,"_hubGenes"), hub_genes(network = get(network_name),
@@ -93,7 +90,7 @@ write.table(rownames(get(paste0(moduleColor, "_",network_name,"_hubGenes"))), fi
 
 ## Calculate Gene Significance (GS)
 
-"we define a node significance measure GS = (GS1,\...,GSn) as a vector with n components that correspond to the network nodes. For the ith node, GSi quantifies the significance or importance with regard to a particular application. The only assumption is that GSi = 0 means that node i is not significant with regard to the application under consideration." (Steve Horvath - Weighted Network Analysis\_ Applications in Genomics and Systems Biology (2011, Springer) \[10.1007_978-1-4419-8819-5\])
+"we define a node significance measure GS = (GS1,...,GSn) as a vector with n components that correspond to the network nodes. For the ith node, GSi quantifies the significance or importance with regard to a particular application. The only assumption is that GSi = 0 means that node i is not significant with regard to the application under consideration." (Steve Horvath - Weighted Network Analysis\_ Applications in Genomics and Systems Biology (2011, Springer) \[10.1007_978-1-4419-8819-5\])
 
 Using the Gene significance (GS) and module membership (MM) measures, we can identify genes that have a high significance for the trait of interest as well as high module membership in interesting modules.
 

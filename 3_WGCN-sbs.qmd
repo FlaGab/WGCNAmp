@@ -10,7 +10,7 @@ editor: visual
 Resume session
 
 ```{r}
-session_name <- "TT8_RNAseq"
+session_name <- "WGCNA_test"
 ```
 
 ```{r}
@@ -92,7 +92,7 @@ Save networks and module tables
 
 ```{r}
 #save network data for visualization
-save(net, net_km, file = paste0(session_name, "/out/3_networks.Rdata"))
+save(net, net_km, file = paste0(session_name, "/out/3_networks.rds"))
 ```
 
 ```{r}

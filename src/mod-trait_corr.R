@@ -106,16 +106,25 @@ prepare_categorical_metadata <- function(data,
   }
 
   prepared_data <- data
+  observed_level_counts <- vapply(
+    variables,
+    function(variable) {
+      nlevels(droplevels(factor(prepared_data[[variable]])))
+    },
+    integer(1)
+  )
+  skipped_variables <- variables[observed_level_counts < 2L]
+  variables <- variables[observed_level_counts >= 2L]
+
+  if (length(variables) == 0L) {
+    stop(
+      "No informative categorical variables remain: every selected variable ",
+      "has fewer than two observed levels."
+    )
+  }
 
   for (variable in variables) {
     values <- droplevels(factor(prepared_data[[variable]]))
-
-    if (nlevels(values) < 2L) {
-      stop(
-        "Categorical variable '", variable,
-        "' must contain at least two observed levels."
-      )
-    }
 
     if (!is.null(reference_levels) && variable %in% names(reference_levels)) {
       reference <- unname(reference_levels[[variable]])
@@ -135,7 +144,11 @@ prepare_categorical_metadata <- function(data,
     prepared_data[[variable]] <- values
   }
 
-  list(data = prepared_data, variables = variables)
+  list(
+    data = prepared_data,
+    variables = variables,
+    skipped_variables = skipped_variables
+  )
 }
 
 drop_redundant_binary_contrasts <- function(binary_matrix, variables) {
@@ -223,9 +236,17 @@ binary_contrast_matrix <- function(data,
       variables = prepared$variables
     )
   }
+  attr(bin.mat, "skipped_single_level_variables") <- prepared$skipped_variables
 
   # Print summary if verbose is TRUE
   if (verbose) {
+    if (length(prepared$skipped_variables) > 0L) {
+      message(
+        "Skipped categorical variables with fewer than two observed levels: ",
+        paste(prepared$skipped_variables, collapse = ", ")
+      )
+    }
+
     message("Categorical variables: ", paste(prepared$variables, collapse = ", "))
     for (variable in prepared$variables) {
       message(
@@ -296,7 +317,12 @@ select_binary_contrasts <- function(binary_matrix,
     stop("Contrast selection removed every generated contrast.")
   }
 
+  skipped_variables <- attr(
+    binary_matrix,
+    "skipped_single_level_variables"
+  )
   result <- binary_matrix[, selected, drop = FALSE]
+  attr(result, "skipped_single_level_variables") <- skipped_variables
 
   if (verbose) {
     message("Selected contrasts: ", paste(selected, collapse = ", "))

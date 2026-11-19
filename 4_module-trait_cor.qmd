@@ -10,7 +10,7 @@ editor: visual
 Resume session
 
 ```{r}
-session_name <- "TT8_RNAseq"
+session_name <- "WGCNA_test"
 ```
 
 Load environment
@@ -20,12 +20,9 @@ source("src/4_env_setup.R")
 load(paste0(session_name, "/out/1_prepared_data.Rdata"))
 source(paste0(session_name, "/in/", session_name,"_parameters.R"))
 
-network_result <- readRDS(
+load(
   file.path(session_name, "out", "3_networks.rds")
 )
-
-net <- network_result$network
-net_km <- network_result$network_kmeans
 ```
 
 ## Continuous variables
@@ -47,10 +44,7 @@ if(!is.null(data$traits)){
 
 <https://peterlangfelder.com/2018/11/25/working-with-categorical-variables/>
 
-Categorical variables and reference levels are read from the session parameters.
-When `categorical_variables` is `NULL`, factor, character, and logical metadata
-columns are detected automatically. All non-redundant contrasts are retained by
-default.
+Categorical variables and reference levels are read from the session parameters. When `categorical_variables` is `NULL`, factor, character, and logical metadata columns are detected automatically. All non-redundant contrasts are retained by default. Variables with fewer than two observed levels are reported and skipped because they cannot define a contrast.
 
 ```{r}
 # Generate contrasts using stable variable and level names rather than column
