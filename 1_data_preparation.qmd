@@ -6,6 +6,9 @@ editor: visual
 
 # Expression data preparation for WGCNA
 
+This report is a thin interface to `run_data_preparation()`. The same function
+can be called from the Shiny application without editing this notebook.
+
 ## Environment setup
 
 ```{r}
@@ -14,99 +17,88 @@ source("src/1_env_setup.R")
 create_session_env(session_name)
 ```
 
-## Data Importing
+## Dataset-specific metadata
 
-It is pivotal that every file is in the "in/" folder.
+The current analysis colors QC plots by the experimental cross. Keeping this
+transformation outside `run_data_preparation()` makes the pipeline function
+reusable with datasets that have different metadata columns.
 
 ```{r}
-data <- import_data(
+add_cross_metadata <- function(metadata) {
+  required_columns <- c("mat.gen", "mat.ploidy", "pat.gen", "pat.ploidy")
+  missing_columns <- setdiff(required_columns, colnames(metadata))
+  if (length(missing_columns) > 0L) {
+    stop(
+      "Cannot construct 'cross'; missing metadata columns: ",
+      paste(missing_columns, collapse = ", ")
+    )
+  }
+
+  metadata$cross <- factor(paste0(
+    metadata$mat.gen,
+    "_",
+    metadata$mat.ploidy,
+    "X",
+    metadata$pat.gen,
+    "_",
+    metadata$pat.ploidy
+  ))
+  metadata
+}
+```
+
+## Run data preparation
+
+```{r}
+preparation_result <- run_data_preparation(
+  session_dir = session_name,
   counts_file = count.matrix,
   gene_length_column = gene.length.column,
   metadata_file = metadata.filename,
   traits_file = traits.filename,
   traits_sample_id = "sample",
-  traits_sep = ";"
+  traits_sep = ";",
+  excluded_samples = excluded_samples,
+  filtering_method = filtering_method,
+  n = n,
+  m = m,
+  p = p,
+  qc_color_column = "cross",
+  metadata_transform = add_cross_metadata
+)
+
+preparation_result
+```
+
+## Quality-control preview
+
+The clustering and PCA plots are saved in the session's `plots/` directory.
+
+```{r}
+print(preparation_result$qc$pca)
+```
+
+## Preparation summary
+
+```{r}
+data.frame(
+  metric = c(
+    "Input genes",
+    "Genes after missing-data QC",
+    "Retained genes",
+    "Input samples",
+    "Retained samples"
+  ),
+  value = c(
+    preparation_result$summary$input_genes,
+    preparation_result$summary$genes_after_missing_qc,
+    preparation_result$summary$retained_genes,
+    preparation_result$summary$input_samples,
+    preparation_result$summary$retained_samples
+  )
 )
 ```
 
 ```{r}
-#creating the "cross" column representing the experimental conditions
-data$metadata["cross"]<- as.factor(paste0(data$metadata[["mat.gen"]], "_", data$metadata[["mat.ploidy"]], "X", data$metadata[["pat.gen"]], "_", data$metadata[["pat.ploidy"]]))
-```
-
-## Quality check
-
-```{r}
-#check for missing data
-gsg <- missing_QC(data$counts)
-
-#remove genes missing read counts
-data$data_no_missing <- data$counts[gsg$goodGenes == T,]
-
-#identify outlier samples
-HC_QC(data$data_no_missing, metadata = data$metadata, color_col = "cross")
-pca_qc <- PCA_QC(data$data_no_missing, metadata = data$metadata, color_col = "cross")
-
-pdf(file = paste0(session_name,"/plots/clustering_QC.pdf"), 
-  width = 8,          # Width in inches
-  height = 6,         # Height in inches
-  bg = "white")
-HC_QC(data$data_no_missing, metadata = data$metadata, color_col = "cross")
-dev.off()
-
-pdf(file = paste0(session_name,"/plots/PCA_QC.pdf"), 
-  width = 8,          # Width in inches
-  height = 6,         # Height in inches
-  bg = "white")
-pca_qc
-dev.off()
-```
-
-## Data filtering
-
-### Remove outlying samples
-
-```{r}
-data <- exclude_samples(data, samples = excluded_samples)
-```
-
-### Remove low expressed genes
-
-Pick one of the following option:
-
-1.  simple filtering on overall low detected genes - remove genes having less than n reads across all samples
-
-2.  remove genes with less than n reads in at least m samples
-
-3.  remove all genes having less than m reads in at least p of the samples; where p is a number between 0 (no sample) and 1 (every sample)
-
-```{r}
-data$filtered_data = low_reads_filtering(data$counts, method = filtering_method, n = n, m = m, p = p)
-```
-
-## Data normalization
-
-```{r}
-normalization_result <- normalize_expression_data(data)
-data$exprData <- normalization_result$expression_vst
-data$normalized_counts <- normalization_result$normalized_counts
-rm(normalization_result)
-```
-
-## Export prepared data
-
-```{r}
-# The size-factor-normalized counts are retained in `data$normalized_counts`
-# for downstream expression plots. Only the redundant raw intermediates are
-# removed from the saved object.
-data$counts <- NULL
-data$filtered_data <- NULL
-```
-
-save prepared data and clear global environment
-
-```{r}
-save(data, file = file.path(session_name, "out/1_prepared_data.RData"))
-
-rm(list = ls())
+preparation_result$files
 ```

@@ -20,22 +20,22 @@ normalize_expression_data <- function(data) {
 
   # Estimate size factors once so that both output matrices are derived from
   # the same DESeq2 object.
-  dds <- DESeqDataSetFromMatrix(
+  dds <- DESeq2::DESeqDataSetFromMatrix(
     countData = data$filtered_data,
     colData = data$metadata,
     design = ~1
   )
-  dds <- estimateSizeFactors(dds)
+  dds <- DESeq2::estimateSizeFactors(dds)
 
   # Keep size-factor-normalized counts for downstream expression plots.
   normalized_counts <- as.data.frame(
-    counts(dds, normalized = TRUE),
+    DESeq2::counts(dds, normalized = TRUE),
     check.names = FALSE
   )
 
   # WGCNA expects samples in rows and genes in columns.
-  dds_vst <- vst(dds)
-  expression_vst <- t(assay(dds_vst))
+  dds_vst <- DESeq2::vst(dds)
+  expression_vst <- t(SummarizedExperiment::assay(dds_vst))
 
   list(
     expression_vst = expression_vst,
