@@ -301,6 +301,246 @@ h6 {
   overflow-wrap: anywhere;
 }
 
+.stage-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 1.25rem;
+  padding: 1.25rem 1.35rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+  box-shadow: 0 8px 30px rgba(23, 32, 51, 0.045);
+}
+
+.stage-heading h2,
+.results-heading h2 {
+  margin: 0.15rem 0 0;
+  color: var(--ink);
+  font-size: 1.55rem;
+  letter-spacing: -0.025em;
+}
+
+.stage-heading .stage-description {
+  margin: 0.45rem 0 0;
+}
+
+.preparation-card,
+.run-card,
+.summary-card,
+.qc-card {
+  margin-bottom: 1rem;
+}
+
+.preparation-card > .card-header,
+.run-card > .card-header,
+.summary-card > .card-header,
+.qc-card > .card-header {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 750;
+}
+
+.control-section h3,
+.summary-card h3 {
+  margin: 0 0 0.85rem;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 750;
+}
+
+.form-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.form-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-label,
+.control-label {
+  color: #344054;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.field-help,
+.run-note {
+  margin: -0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.input-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.5rem;
+}
+
+.input-overview > div {
+  display: grid;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.overview-value {
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 750;
+}
+
+.dependency-ready,
+.dependency-missing {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-bottom: 0.9rem;
+  padding: 0.75rem;
+  border-radius: 0.7rem;
+  font-size: 0.87rem;
+}
+
+.dependency-ready {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.dependency-missing {
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.run-stage-button {
+  width: 100%;
+  margin-bottom: 0.75rem;
+  padding: 0.68rem 1rem;
+  font-weight: 750;
+}
+
+.run-feedback,
+.empty-results {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  margin: 0 0 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid;
+  border-radius: 0.85rem;
+}
+
+.run-feedback p,
+.empty-results p {
+  margin: 0.2rem 0 0;
+}
+
+.run-feedback-success {
+  border-color: #a6e1c5;
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.run-feedback-error {
+  border-color: #fecdca;
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.empty-results {
+  border-color: var(--line);
+  background: #f8fafc;
+  color: var(--muted);
+}
+
+.results-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1.6rem 0 0.9rem;
+}
+
+.results-heading .eyebrow {
+  margin-bottom: 0;
+}
+
+.result-time {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.summary-metrics {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.summary-metric {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.7rem;
+  background: #f8fafc;
+}
+
+.summary-metric strong {
+  color: var(--primary);
+  font-size: 1.15rem;
+}
+
+.summary-metric span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: right;
+}
+
+.sample-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sample-tags span {
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  background: var(--waiting-soft);
+  color: var(--waiting);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.artifact-path {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.artifact-path code {
+  overflow-wrap: anywhere;
+  color: #344054;
+}
+
+.plot-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding-top: 0.65rem;
+}
+
+.plot-downloads .btn {
+  font-size: 0.85rem;
+}
+
 @media (max-width: 800px) {
   .app-content {
     padding: 0.85rem;
@@ -313,5 +553,16 @@ h6 {
 
   .progress-summary {
     text-align: left;
+  }
+
+  .form-grid-2,
+  .input-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-heading,
+  .results-heading {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

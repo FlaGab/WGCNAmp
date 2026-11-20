@@ -12,6 +12,22 @@ import_counts <- function(file_path, gene_length_col = NULL, sep = ",") {
     stringsAsFactors = FALSE,
     check.names = FALSE
   )
+
+  # Standard CSV writers commonly store gene identifiers in the first column
+  # (often with an empty header) instead of encoding them as row names. Accept
+  # that layout automatically while preserving the legacy row-name layout.
+  default_row_names <- identical(rownames(data), as.character(seq_len(nrow(data))))
+  if (default_row_names && ncol(data) > 0L && !is.numeric(data[[1L]])) {
+    gene_ids <- as.character(data[[1L]])
+    if (anyNA(gene_ids) || any(!nzchar(gene_ids))) {
+      stop("The gene-identifier column contains missing or empty values.")
+    }
+    if (anyDuplicated(gene_ids)) {
+      stop("Counts data contains duplicated gene identifiers.")
+    }
+    rownames(data) <- gene_ids
+    data <- data[, -1L, drop = FALSE]
+  }
   
   gene_length <- NULL
   if (!is.null(gene_length_col)) {
@@ -67,7 +83,7 @@ import_metadata <- function(file_path, sep = ",", sample_id = "sample") {
   }
   
   rownames(metadata) <- metadata[[sample_id]]
-  metadata <- metadata[, colnames(metadata)!=sample_id]
+  metadata <- metadata[, colnames(metadata) != sample_id, drop = FALSE]
   if (anyDuplicated(rownames(metadata))) {
     stop("Metadata contains duplicated sample identifiers.")
   }

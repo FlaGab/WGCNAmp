@@ -288,10 +288,22 @@ run_data_preparation <- function(session_dir,
     files = list(
       prepared_data = artifact_path,
       clustering_qc = clustering_path,
-      pca_qc = pca_path
-    )
+      pca_qc = pca_path,
+      preparation_report = if (save_artifact) {
+        file.path(output_dir, "1_preparation_report.rds")
+      } else {
+        NULL
+      }
+    ),
+    completed_at = Sys.time()
   )
   class(result) <- c("wgcnamp_data_preparation", class(result))
+
+  if (save_artifact) {
+    report <- result
+    report$data <- NULL
+    saveRDS(report, result$files$preparation_report)
+  }
 
   if (verbose) {
     message(

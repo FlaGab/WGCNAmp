@@ -131,5 +131,11 @@ sessionSelectorServer <- function(id, project_root) {
 }
 
 `%||%` <- function(left, right) {
-  if (is.null(left) || length(left) == 0L || !nzchar(left)) right else left
+  if (is.null(left) ||
+      length(left) == 0L ||
+      (length(left) == 1L && !nzchar(left))) {
+    right
+  } else {
+    left
+  }
 }

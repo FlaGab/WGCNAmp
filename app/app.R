@@ -13,6 +13,24 @@ if (length(missing_packages) > 0L) {
 }
 
 project_root <- wgcnamp_project_root()
+max_upload_mb <- suppressWarnings(as.numeric(
+  Sys.getenv("WGCNAMP_MAX_UPLOAD_MB", unset = "512")
+))
+if (is.na(max_upload_mb) || max_upload_mb <= 0) {
+  max_upload_mb <- 512
+}
+options(shiny.maxRequestSize = max_upload_mb * 1024^2)
+
+backend_files <- c(
+  "src/importing_functions_v2.R",
+  "src/quality_check.R",
+  "src/filtering_functions.R",
+  "src/normalization.R",
+  "src/data_preparation_pipeline.R"
+)
+for (backend_file in backend_files) {
+  sys.source(file.path(project_root, backend_file), envir = environment())
+}
 
 status_icon <- function(status) {
   switch(status, complete = "✓", ready = "●", blocked = "○", "○")
@@ -72,10 +90,18 @@ ui <- bslib::page_sidebar(
 
 server <- function(input, output, session) {
   selector <- sessionSelectorServer("session_selector", project_root)
+  pipeline_revision <- shiny::reactiveVal(0L)
+
+  dataPreparationServer(
+    "data_preparation",
+    selected_session = selector$selected,
+    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+  )
 
   stage_table <- shiny::reactive({
     selected <- selector$selected()
     selector$revision()
+    pipeline_revision()
     if (is.null(selected)) {
       return(NULL)
     }
@@ -172,6 +198,10 @@ server <- function(input, output, session) {
     }
     stage <- stages[match(active, stages$id), , drop = FALSE]
     outputs <- session_output_files(selected$path)
+
+    if (identical(active, "step1")) {
+      return(dataPreparationUI("data_preparation"))
+    }
 
     bslib::layout_columns(
       col_widths = c(8, 4),
