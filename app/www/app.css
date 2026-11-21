@@ -541,6 +541,92 @@ h6 {
   font-size: 0.85rem;
 }
 
+.threshold-controls-card,
+.threshold-summary-card {
+  margin-bottom: 1rem;
+}
+
+.selection-guidance {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.8rem;
+  border-radius: 0.7rem;
+  background: var(--primary-soft);
+  color: #0c556e;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.candidate-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin-top: 0.3rem;
+  padding: 0.72rem 0.8rem;
+  border-radius: 0.7rem;
+  font-size: 0.85rem;
+}
+
+.candidate-summary-valid {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.candidate-summary-valid strong {
+  font-size: 1.15rem;
+}
+
+.candidate-summary-invalid,
+.prerequisite-warning {
+  border-color: #fedf89;
+  background: var(--waiting-soft);
+  color: var(--waiting);
+}
+
+.selected-power {
+  margin: 0.25rem 0 1rem;
+  color: var(--primary);
+  font-size: clamp(3rem, 8vw, 5rem);
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+.threshold-summary-card dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.45rem 0.8rem;
+  margin: 0 0 1rem;
+}
+
+.threshold-summary-card dt,
+.threshold-summary-card dd {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.threshold-summary-card dt {
+  color: var(--muted);
+  font-weight: 550;
+}
+
+.threshold-summary-card dd {
+  color: var(--ink);
+  font-weight: 700;
+  text-align: right;
+  text-transform: capitalize;
+}
+
+.threshold-table-wrap {
+  max-height: 440px;
+  overflow: auto;
+}
+
+.threshold-table-wrap table {
+  font-size: 0.85rem;
+}
+
 @media (max-width: 800px) {
   .app-content {
     padding: 0.85rem;

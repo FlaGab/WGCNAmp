@@ -26,7 +26,8 @@ backend_files <- c(
   "src/quality_check.R",
   "src/filtering_functions.R",
   "src/normalization.R",
-  "src/data_preparation_pipeline.R"
+  "src/data_preparation_pipeline.R",
+  "src/soft_threshold_pipeline.R"
 )
 for (backend_file in backend_files) {
   sys.source(file.path(project_root, backend_file), envir = environment())
@@ -94,6 +95,11 @@ server <- function(input, output, session) {
 
   dataPreparationServer(
     "data_preparation",
+    selected_session = selector$selected,
+    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+  )
+  softThresholdServer(
+    "soft_threshold",
     selected_session = selector$selected,
     on_complete = function() pipeline_revision(pipeline_revision() + 1L)
   )
@@ -201,6 +207,9 @@ server <- function(input, output, session) {
 
     if (identical(active, "step1")) {
       return(dataPreparationUI("data_preparation"))
+    }
+    if (identical(active, "step2")) {
+      return(softThresholdUI("soft_threshold"))
     }
 
     bslib::layout_columns(

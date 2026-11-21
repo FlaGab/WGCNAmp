@@ -30,8 +30,11 @@ The current milestone provides:
 - execution of `run_data_preparation()` with the legacy
   `out/1_prepared_data.RData` artifact retained for downstream stages;
 - persistent preparation metrics plus PCA and sample-clustering previews;
+- a soft-threshold screen with configurable candidate powers, network type,
+  scale-free fit target, explicit selection policy, diagnostics, and the legacy
+  `out/2_pt.Rdata` artifact;
 - placeholders where the remaining notebooks' controls and execution actions
   will be migrated.
 
-The GUI currently executes step 1. Existing notebooks remain available and
-continue to use the same pipeline artifacts.
+The GUI currently executes steps 1 and 2. Existing notebooks remain available
+and continue to use the same pipeline artifacts.
