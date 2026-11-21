@@ -165,6 +165,22 @@ separator_value <- function(value) {
   switch(value, comma = ",", semicolon = ";", tab = "\t", ",")
 }
 
+detect_separator_key <- function(path, fallback = "comma") {
+  if (is.null(path) || !file.exists(path)) {
+    return(fallback)
+  }
+  header <- readLines(path, n = 1L, warn = FALSE)
+  if (length(header) == 0L) {
+    return(fallback)
+  }
+  separators <- c(comma = ",", semicolon = ";", tab = "\t")
+  counts <- vapply(separators, function(separator) {
+    matches <- gregexpr(separator, header, fixed = TRUE)[[1L]]
+    if (length(matches) == 1L && matches[[1L]] == -1L) 0L else length(matches)
+  }, integer(1))
+  if (max(counts) == 0L) fallback else names(which.max(counts))
+}
+
 session_input_files <- function(session_path) {
   input_dir <- file.path(session_path, "in")
   if (!dir.exists(input_dir)) {
@@ -358,6 +374,31 @@ dataPreparationServer <- function(id, selected_session, on_complete = NULL) {
     observe_upload("counts_upload", "counts")
     observe_upload("metadata_upload", "metadata")
     observe_upload("traits_upload", "traits")
+
+    observe_separator <- function(file_input, separator_input, optional = FALSE) {
+      shiny::observeEvent(
+        list(selected_path(), input[[file_input]]),
+        {
+          path <- tryCatch(
+            session_input_path(
+              selected_path(), input[[file_input]], optional = optional
+            ),
+            error = function(error) NULL
+          )
+          if (!is.null(path)) {
+            shiny::updateSelectInput(
+              session,
+              separator_input,
+              selected = detect_separator_key(path)
+            )
+          }
+        },
+        ignoreInit = TRUE
+      )
+    }
+    observe_separator("counts_file", "counts_sep")
+    observe_separator("metadata_file", "metadata_sep")
+    observe_separator("traits_file", "traits_sep", optional = TRUE)
 
     metadata_columns <- shiny::reactive({
       path <- tryCatch(

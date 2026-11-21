@@ -53,7 +53,10 @@ sessionSelectorServer <- function(id, project_root) {
         selected = current,
         server = TRUE
       )
-      revision(revision() + 1L)
+      # refresh_sessions() also runs from session$onFlushed(), which is a
+      # lifecycle callback rather than a reactive consumer. Read the counter
+      # in isolation so initial browser connection cannot abort the app.
+      revision(shiny::isolate(revision()) + 1L)
     }
 
     shiny::observeEvent(input$refresh, {
@@ -104,10 +107,6 @@ sessionSelectorServer <- function(id, project_root) {
         )
       })
     })
-
-    shiny::observeEvent(input$refresh, {
-      refresh_sessions()
-    }, ignoreInit = TRUE)
 
     session$onFlushed(function() {
       refresh_sessions()

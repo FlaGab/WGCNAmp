@@ -40,12 +40,18 @@ run_data_preparation <- function(session_dir,
     "exclude_samples",
     "low_reads_filtering"
   )
+  helper_environment <- environment()
   missing_functions <- required_functions[!vapply(
     required_functions,
-    exists,
-    logical(1),
-    mode = "function",
-    inherits = TRUE
+    function(name) {
+      exists(
+        name,
+        envir = helper_environment,
+        mode = "function",
+        inherits = TRUE
+      )
+    },
+    logical(1)
   )]
   if (length(missing_functions) > 0L) {
     stop(
