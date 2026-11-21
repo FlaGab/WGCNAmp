@@ -43,7 +43,9 @@ backend_files <- c(
   "src/normalization.R",
   "src/data_preparation_pipeline.R",
   "src/soft_threshold_pipeline.R",
-  "src/network_construction_pipeline.R"
+  "src/network_construction_pipeline.R",
+  "src/mod-trait_corr.R",
+  "src/module_trait_pipeline.R"
 )
 backend_environment <- environment(dataPreparationServer)
 for (backend_file in backend_files) {
@@ -109,6 +111,11 @@ server <- function(input, output, session) {
     "network_construction",
     selected_session = selector$selected,
     project_root = project_root,
+    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+  )
+  moduleTraitServer(
+    "module_trait",
+    selected_session = selector$selected,
     on_complete = function() pipeline_revision(pipeline_revision() + 1L)
   )
 
@@ -221,6 +228,9 @@ server <- function(input, output, session) {
     }
     if (identical(active, "step3")) {
       return(networkConstructionUI("network_construction"))
+    }
+    if (identical(active, "step4")) {
+      return(moduleTraitUI("module_trait"))
     }
 
     bslib::layout_columns(

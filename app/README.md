@@ -41,8 +41,11 @@ The current milestone provides:
 - background network construction with blockwise and step-by-step methods,
   persisted task state and logs, method-compatible TOM manifests, module
   diagnostics, and standardized network artifacts;
+- dynamic module–trait controls populated from each session's traits, metadata,
+  and available networks, including reference-level selection, automatic
+  single-level exclusion, contrast previews, correlation tables, and heatmaps;
 - placeholders where the remaining notebooks' controls and execution actions
   will be migrated.
 
-The GUI currently executes steps 1 through 3. Existing notebooks remain available
+The GUI currently executes steps 1 through 4. Existing notebooks remain available
 and continue to use the same pipeline artifacts.

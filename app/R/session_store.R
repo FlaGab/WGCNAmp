@@ -159,7 +159,8 @@ stage_is_complete <- function(stage_id, session_path) {
       out,
       c("3_networks.rds", "3_networks.Rdata", "networks.Rdata")
     ))),
-    step4 = file.exists(file.path(out, "module_trait_binary_contrasts.tsv")) ||
+    step4 = file.exists(file.path(out, "4_module_trait_report.rds")) ||
+      file.exists(file.path(out, "module_trait_binary_contrasts.tsv")) ||
       any(file.exists(file.path(
         plots,
         c("EMhc-condition_corr.pdf", "EMkm-condition_corr.pdf")

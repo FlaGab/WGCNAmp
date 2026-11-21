@@ -334,21 +334,29 @@ h6 {
 .preparation-card,
 .run-card,
 .summary-card,
-.qc-card {
+.qc-card,
+.module-trait-controls-card,
+.module-trait-input-card,
+.module-trait-contrast-card {
   margin-bottom: 1rem;
 }
 
 .preparation-card > .card-header,
 .run-card > .card-header,
 .summary-card > .card-header,
-.qc-card > .card-header {
+.qc-card > .card-header,
+.module-trait-controls-card > .card-header,
+.module-trait-input-card > .card-header,
+.module-trait-contrast-card > .card-header {
   color: var(--ink);
   font-size: 1rem;
   font-weight: 750;
 }
 
 .control-section h3,
-.summary-card h3 {
+.summary-card h3,
+.module-trait-controls-card h3,
+.module-trait-controls-card h4 {
   margin: 0 0 0.85rem;
   color: var(--ink);
   font-size: 0.95rem;
@@ -544,6 +552,49 @@ h6 {
 
 .plot-downloads .btn {
   font-size: 0.85rem;
+}
+
+.module-trait-controls-card .shiny-options-group {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.module-trait-controls-card .form-check-label,
+.module-trait-contrast-card .form-check-label {
+  color: #344054;
+  font-size: 0.9rem;
+}
+
+.module-trait-options {
+  align-items: end;
+  margin-top: 0.85rem;
+}
+
+.reference-level-grid {
+  margin-bottom: 0.75rem;
+}
+
+.module-trait-skipped {
+  margin: 0.7rem 0 1rem;
+  background: var(--waiting-soft);
+  color: var(--waiting);
+}
+
+.module-trait-empty-note {
+  margin-bottom: 0.75rem;
+}
+
+.module-trait-contrast-card .shiny-options-group {
+  max-height: 19rem;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+@media (max-width: 700px) {
+  .reference-level-grid,
+  .module-trait-options {
+    grid-template-columns: 1fr;
+  }
 }
 
 .threshold-controls-card,
