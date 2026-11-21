@@ -17,12 +17,14 @@ Load environment
 
 ```{r}
 source("src/5_env_setup.R")
-load(paste0(session_name, "/out/1_prepared_data.Rdata"))
+load(paste0(session_name, "/out/1_prepared_data.RData"))
 source(paste0(session_name, "/in/", session_name,"_parameters.R"))
 
-load(
+network_result <- readRDS(
   file.path(session_name, "out", "3_networks.rds")
 )
+net <- network_result$network
+net_km <- network_result$network_kmeans
 ```
 
 ## Hub genes
@@ -30,7 +32,7 @@ load(
 Load TOM
 
 ```{r}
-load(file.path(session_name, "out", "TOMfiles", "TOM-sbs.Rdata"))
+TOM <- load_network_tom(network_result)
 ```
 
 2.  Calculate Intramodular Connectivity

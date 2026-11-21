@@ -21,13 +21,29 @@ if (is.na(max_upload_mb) || max_upload_mb <= 0) {
 }
 options(shiny.maxRequestSize = max_upload_mb * 1024^2)
 
+if (requireNamespace("future", quietly = TRUE) &&
+    requireNamespace("promises", quietly = TRUE)) {
+  background_workers <- suppressWarnings(as.integer(
+    Sys.getenv("WGCNAMP_BACKGROUND_WORKERS", unset = "1")
+  ))
+  if (is.na(background_workers) || background_workers < 1L) {
+    background_workers <- 1L
+  }
+  # I() prevents future from replacing a one-worker multisession plan with a
+  # sequential plan; network construction must remain outside Shiny's process.
+  # Stage 3 intentionally opens and closes PDF devices inside the worker.
+  options(future.devices.onMisuse = "ignore")
+  future::plan(future::multisession, workers = I(background_workers))
+}
+
 backend_files <- c(
   "src/importing_functions_v2.R",
   "src/quality_check.R",
   "src/filtering_functions.R",
   "src/normalization.R",
   "src/data_preparation_pipeline.R",
-  "src/soft_threshold_pipeline.R"
+  "src/soft_threshold_pipeline.R",
+  "src/network_construction_pipeline.R"
 )
 for (backend_file in backend_files) {
   sys.source(file.path(project_root, backend_file), envir = environment())
@@ -101,6 +117,12 @@ server <- function(input, output, session) {
   softThresholdServer(
     "soft_threshold",
     selected_session = selector$selected,
+    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+  )
+  networkConstructionServer(
+    "network_construction",
+    selected_session = selector$selected,
+    project_root = project_root,
     on_complete = function() pipeline_revision(pipeline_revision() + 1L)
   )
 
@@ -210,6 +232,9 @@ server <- function(input, output, session) {
     }
     if (identical(active, "step2")) {
       return(softThresholdUI("soft_threshold"))
+    }
+    if (identical(active, "step3")) {
+      return(networkConstructionUI("network_construction"))
     }
 
     bslib::layout_columns(

@@ -18,6 +18,11 @@ Rscript run_gui.R --no-browser --port=3838
 Uploads are limited to 512 MB by default. Set `WGCNAMP_MAX_UPLOAD_MB` before
 launching to choose a different limit.
 
+Network construction runs in a separate R process. Set
+`WGCNAMP_BACKGROUND_WORKERS` before launch to change the number of concurrent
+background workers; the default is one to avoid overlapping memory-intensive
+network jobs.
+
 The current milestone provides:
 
 - discovery and selection of existing analysis sessions;
@@ -33,8 +38,11 @@ The current milestone provides:
 - a soft-threshold screen with configurable candidate powers, network type,
   scale-free fit target, explicit selection policy, diagnostics, and the legacy
   `out/2_pt.Rdata` artifact;
+- background network construction with blockwise and step-by-step methods,
+  persisted task state and logs, method-compatible TOM manifests, module
+  diagnostics, and standardized network artifacts;
 - placeholders where the remaining notebooks' controls and execution actions
   will be migrated.
 
-The GUI currently executes steps 1 and 2. Existing notebooks remain available
+The GUI currently executes steps 1 through 3. Existing notebooks remain available
 and continue to use the same pipeline artifacts.

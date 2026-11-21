@@ -257,6 +257,11 @@ h6 {
   color: var(--waiting);
 }
 
+.status-running {
+  background: #e9e7fd;
+  color: #5145cd;
+}
+
 .stage-description {
   max-width: 75ch;
   color: var(--muted);
@@ -627,6 +632,116 @@ h6 {
   font-size: 0.85rem;
 }
 
+.network-controls-card,
+.network-input-card,
+.network-run-card,
+.network-artifacts-card {
+  margin-bottom: 1rem;
+}
+
+.network-memory-warning {
+  margin-top: 0.5rem;
+  border: 1px solid #fedf89;
+  background: var(--waiting-soft);
+  color: var(--waiting);
+}
+
+.network-input-grid,
+.network-result-grid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.network-input-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.network-result-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 1rem;
+}
+
+.network-input-metric,
+.network-result-metric {
+  display: grid;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: #f8fafc;
+}
+
+.network-input-metric strong,
+.network-result-metric strong {
+  color: var(--primary);
+  font-size: 1.2rem;
+  overflow-wrap: anywhere;
+}
+
+.network-input-metric span,
+.network-result-metric span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.network-task-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  font-size: 0.86rem;
+}
+
+.network-task-state p {
+  margin: 0.2rem 0 0;
+  line-height: 1.5;
+}
+
+.network-task-idle {
+  background: #f8fafc;
+  color: var(--muted);
+}
+
+.network-task-running {
+  border-color: #c7d7fe;
+  background: #eef4ff;
+  color: #3538cd;
+}
+
+.network-task-complete {
+  border-color: #a6e1c5;
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.network-task-error {
+  border-color: #fecdca;
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.network-spinner {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  border: 2px solid #c7d7fe;
+  border-top-color: #3538cd;
+  border-radius: 50%;
+  animation: network-spin 0.8s linear infinite;
+}
+
+@keyframes network-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.network-artifacts-card code {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 800px) {
   .app-content {
     padding: 0.85rem;
@@ -642,7 +757,9 @@ h6 {
   }
 
   .form-grid-2,
-  .input-overview {
+  .input-overview,
+  .network-input-grid,
+  .network-result-grid {
     grid-template-columns: 1fr;
   }
 
