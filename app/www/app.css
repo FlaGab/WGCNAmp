@@ -337,7 +337,9 @@ h6 {
 .qc-card,
 .module-trait-controls-card,
 .module-trait-input-card,
-.module-trait-contrast-card {
+.module-trait-contrast-card,
+.downstream-controls-card,
+.downstream-summary-card {
   margin-bottom: 1rem;
 }
 
@@ -347,7 +349,9 @@ h6 {
 .qc-card > .card-header,
 .module-trait-controls-card > .card-header,
 .module-trait-input-card > .card-header,
-.module-trait-contrast-card > .card-header {
+.module-trait-contrast-card > .card-header,
+.downstream-controls-card > .card-header,
+.downstream-summary-card > .card-header {
   color: var(--ink);
   font-size: 1rem;
   font-weight: 750;
@@ -356,7 +360,9 @@ h6 {
 .control-section h3,
 .summary-card h3,
 .module-trait-controls-card h3,
-.module-trait-controls-card h4 {
+.module-trait-controls-card h4,
+.downstream-controls-card h3,
+.downstream-controls-card h4 {
   margin: 0 0 0.85rem;
   color: var(--ink);
   font-size: 0.95rem;
@@ -588,6 +594,17 @@ h6 {
   max-height: 19rem;
   overflow-y: auto;
   padding-right: 0.35rem;
+}
+
+.downstream-controls-card .shiny-options-group {
+  max-height: 20rem;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+.downstream-controls-card .form-check-label {
+  color: #344054;
+  font-size: 0.9rem;
 }
 
 @media (max-width: 700px) {

@@ -45,7 +45,8 @@ backend_files <- c(
   "src/soft_threshold_pipeline.R",
   "src/network_construction_pipeline.R",
   "src/mod-trait_corr.R",
-  "src/module_trait_pipeline.R"
+  "src/module_trait_pipeline.R",
+  "src/downstream_pipeline.R"
 )
 backend_environment <- environment(dataPreparationServer)
 for (backend_file in backend_files) {
@@ -115,6 +116,21 @@ server <- function(input, output, session) {
   )
   moduleTraitServer(
     "module_trait",
+    selected_session = selector$selected,
+    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+  )
+  hubAnalysisServer(
+    "hub_analysis",
+    selected_session = selector$selected,
+    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+  )
+  enrichmentServer(
+    "enrichment",
+    selected_session = selector$selected,
+    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+  )
+  geneVisualizationServer(
+    "gene_visualization",
     selected_session = selector$selected,
     on_complete = function() pipeline_revision(pipeline_revision() + 1L)
   )
@@ -231,6 +247,15 @@ server <- function(input, output, session) {
     }
     if (identical(active, "step4")) {
       return(moduleTraitUI("module_trait"))
+    }
+    if (identical(active, "step5")) {
+      return(hubAnalysisUI("hub_analysis"))
+    }
+    if (identical(active, "step6")) {
+      return(enrichmentUI("enrichment"))
+    }
+    if (identical(active, "step7")) {
+      return(geneVisualizationUI("gene_visualization"))
     }
 
     bslib::layout_columns(

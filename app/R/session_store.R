@@ -165,16 +165,23 @@ stage_is_complete <- function(stage_id, session_path) {
         plots,
         c("EMhc-condition_corr.pdf", "EMkm-condition_corr.pdf")
       ))),
-    step5 = any(file.exists(file.path(
+    step5 = file.exists(file.path(out, "5_hub_report.rds")) ||
+      any(file.exists(file.path(
       out,
       c("geneMM_hc.csv", "geneMM_km.csv", "intramodular_connectivity_km.csv")
     ))),
     step6 = {
       go_dir <- file.path(out, "GO")
-      dir.exists(go_dir) && length(list.files(go_dir, all.files = FALSE)) > 0L
+      file.exists(file.path(go_dir, "6_enrichment_report.rds")) ||
+        (dir.exists(go_dir) && length(list.files(go_dir, all.files = FALSE)) > 0L)
     },
     step7 = {
-      length(list.files(plots, pattern = "gene|expression", ignore.case = TRUE)) > 0L
+      file.exists(file.path(out, "7_visualization_report.rds")) ||
+        length(list.files(
+          plots,
+          pattern = "^7_.*visualization|gene[_-]expression|expression[_-]profile",
+          ignore.case = TRUE
+        )) > 0L
     },
     FALSE
   )

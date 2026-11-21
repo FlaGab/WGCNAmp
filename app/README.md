@@ -44,8 +44,12 @@ The current milestone provides:
 - dynamic module–trait controls populated from each session's traits, metadata,
   and available networks, including reference-level selection, automatic
   single-level exclusion, contrast previews, correlation tables, and heatmaps;
-- placeholders where the remaining notebooks' controls and execution actions
-  will be migrated.
+- WGCNA hub-gene ranking with dynamic network, module, threshold, and optional
+  gene-significance controls;
+- local Arabidopsis GO enrichment with selectable modules, ontology, cutoffs,
+  redundancy reduction, result tables, and plots;
+- dynamic normalized-expression, module-summary, and eigengene visualizations
+  with selectable genes and sample grouping.
 
-The GUI currently executes steps 1 through 4. Existing notebooks remain available
+The GUI currently executes all seven steps. Existing notebooks remain available
 and continue to use the same pipeline artifacts.
