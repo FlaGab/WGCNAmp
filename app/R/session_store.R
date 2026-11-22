@@ -24,7 +24,7 @@ stage_definitions <- function() {
       "Estimate and select the soft-thresholding power.",
       "Build the WGCNA network and inspect detected modules.",
       "Generate categorical contrasts and relate module eigengenes to traits.",
-      "Calculate module membership, connectivity, and candidate hub genes.",
+      "Calculate module membership and adjacency- or TOM-based candidate hub genes.",
       "Run GO and KEGG enrichment for selected modules.",
       "Explore normalized expression for selected genes and modules."
     ),

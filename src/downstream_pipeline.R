@@ -61,7 +61,8 @@ downstream_control_spec <- function(session_dir) {
     colors = colors,
     continuous_traits = continuous_traits,
     metadata_columns = metadata_columns,
-    normalized_counts_available = !is.null(data$normalized_counts)
+    normalized_counts_available = !is.null(data$normalized_counts),
+    tom = network_tom_summary(inputs$network_result, session_dir)
   )
 }
 
@@ -87,6 +88,141 @@ load_downstream_network_parameters <- function(session_dir, network_result) {
   )
 }
 
+resolve_network_tom_manifest <- function(network_result, session_dir = NULL) {
+  manifest <- network_result$tom
+  if (is.null(manifest) || length(manifest$files) == 0L) return(network_result)
+  files <- as.character(manifest$files)
+  if (!is.null(session_dir)) {
+    files <- vapply(files, function(path) {
+      if (file.exists(path)) return(path)
+      relocated <- file.path(session_dir, "out", "TOMfiles", basename(path))
+      if (file.exists(relocated)) relocated else path
+    }, character(1))
+  }
+  if (identical(manifest$method, "blockwise") && length(files) > 1L) {
+    block_number <- suppressWarnings(as.integer(sub(
+      ".*block[.]([0-9]+)[.]RData$", "\\1", basename(files)
+    )))
+    if (all(!is.na(block_number))) files <- files[order(block_number)]
+  }
+  network_result$tom$files <- unname(files)
+  network_result
+}
+
+network_tom_summary <- function(network_result, session_dir = NULL) {
+  network_result <- resolve_network_tom_manifest(network_result, session_dir)
+  manifest <- network_result$tom
+  if (is.null(manifest) || length(manifest$files) == 0L) {
+    return(list(
+      available = FALSE,
+      method = NULL,
+      files = character(),
+      blocks = 0L,
+      bytes = 0,
+      message = "No TOM manifest is stored with this network."
+    ))
+  }
+  files <- manifest$files
+  if (identical(manifest$method, "stepwise")) {
+    files <- files[grepl("[.]rds$", files, ignore.case = TRUE)]
+  }
+  existing <- file.exists(files)
+  block_count_matches <- !identical(manifest$method, "blockwise") ||
+    length(files) == length(network_result$network$blockGenes)
+  available <- length(files) > 0L && all(existing) && block_count_matches
+  message <- if (length(files) == 0L) {
+    "The compatible TOM matrix file is missing from the manifest."
+  } else if (any(!existing)) {
+    paste("Missing TOM file(s):", paste(basename(files[!existing]), collapse = ", "))
+  } else if (!block_count_matches) {
+    "The number of TOM files does not match the network blocks."
+  } else {
+    NULL
+  }
+  list(
+    available = available,
+    method = manifest$method,
+    type = manifest$type,
+    files = files,
+    blocks = if (identical(manifest$method, "blockwise")) length(files) else 1L,
+    bytes = sum(file.info(files[existing])$size, na.rm = TRUE),
+    message = message
+  )
+}
+
+tom_intramodular_connectivity <- function(network_result,
+                                          colors,
+                                          expression_genes,
+                                          modules,
+                                          session_dir = NULL) {
+  network_result <- resolve_network_tom_manifest(network_result, session_dir)
+  summary <- network_tom_summary(network_result)
+  if (!isTRUE(summary$available)) {
+    stop(summary$message, call. = FALSE)
+  }
+  colors <- colors[expression_genes]
+  selected_genes <- names(colors)[colors %in% modules]
+  connectivity <- stats::setNames(rep(NA_real_, length(expression_genes)), expression_genes)
+
+  calculate_block <- function(tom, block_colors, block_genes, label) {
+    if (!is.matrix(tom) || nrow(tom) != ncol(tom) ||
+        nrow(tom) != length(block_genes)) {
+      stop(
+        label, " has dimensions incompatible with its network block.",
+        call. = FALSE
+      )
+    }
+    values <- WGCNA::intramodularConnectivity(
+      adjMat = tom,
+      colors = unname(block_colors)
+    )
+    if (!"kWithin" %in% names(values)) {
+      stop(label, " did not produce a kWithin column.", call. = FALSE)
+    }
+    stats::setNames(as.numeric(values$kWithin), block_genes)
+  }
+
+  if (identical(summary$method, "stepwise")) {
+    tom <- load_network_tom(network_result)
+    connectivity[] <- calculate_block(
+      tom,
+      colors,
+      expression_genes,
+      "The stored TOM matrix"
+    )
+    rm(tom)
+  } else {
+    block_genes <- network_result$network$blockGenes
+    for (block in seq_along(block_genes)) {
+      indices <- as.integer(block_genes[[block]])
+      if (length(indices) == 0L || any(indices < 1L | indices > length(expression_genes))) {
+        stop("Network block ", block, " contains invalid gene indices.", call. = FALSE)
+      }
+      genes <- expression_genes[indices]
+      block_colors <- colors[genes]
+      if (!any(block_colors %in% modules)) next
+      tom <- load_network_tom(network_result, block = block)
+      connectivity[genes] <- calculate_block(
+        tom,
+        block_colors,
+        genes,
+        paste("TOM block", block)
+      )
+      rm(tom)
+      invisible(gc(verbose = FALSE))
+    }
+  }
+  missing <- selected_genes[!is.finite(connectivity[selected_genes])]
+  if (length(missing) > 0L) {
+    stop(
+      "TOM connectivity could not be calculated for ", length(missing),
+      " selected gene(s).",
+      call. = FALSE
+    )
+  }
+  connectivity
+}
+
 safe_module_filename <- function(value) {
   gsub("[^A-Za-z0-9_.-]+", "_", value)
 }
@@ -96,11 +232,13 @@ run_hub_analysis <- function(session_dir,
                              modules,
                              min_module_membership = 0.8,
                              connectivity_quantile = 0.9,
+                             connectivity_mode = c("adjacency", "tom"),
                              trait = NULL,
                              trait_method = "pearson",
                              create_plot = TRUE,
                              save_artifacts = TRUE,
                              verbose = TRUE) {
+  connectivity_mode <- match.arg(connectivity_mode)
   inputs <- load_module_trait_inputs(session_dir)
   data <- inputs$data
   expression <- as.matrix(data$exprData)
@@ -143,13 +281,27 @@ run_hub_analysis <- function(session_dir,
   } else {
     "cor"
   }
+  tom_connectivity <- if (identical(connectivity_mode, "tom")) {
+    if (verbose) message("Loading stored TOM data for intramodular connectivity...")
+    tom_intramodular_connectivity(
+      network_result = inputs$network_result,
+      colors = colors,
+      expression_genes = colnames(expression),
+      modules = modules,
+      session_dir = session_dir
+    )
+  } else {
+    NULL
+  }
   module_tables <- lapply(modules, function(module) {
     genes <- names(colors)[colors == module]
     eigengene_column <- paste0("ME", module)
     if (!eigengene_column %in% colnames(gene_mm)) {
       stop("Module eigengene is missing for module '", module, "'.", call. = FALSE)
     }
-    connectivity <- if (length(genes) == 1L) {
+    connectivity <- if (identical(connectivity_mode, "tom")) {
+      tom_connectivity[genes]
+    } else if (length(genes) == 1L) {
       stats::setNames(0, genes)
     } else {
       values <- WGCNA::softConnectivity(
@@ -175,6 +327,7 @@ run_hub_analysis <- function(session_dir,
       module_membership = as.numeric(membership),
       abs_module_membership = abs(as.numeric(membership)),
       kWithin = as.numeric(connectivity[genes]),
+      connectivity_mode = connectivity_mode,
       connectivity_cutoff = connectivity_cutoff,
       stringsAsFactors = FALSE
     )
@@ -222,8 +375,15 @@ run_hub_analysis <- function(session_dir,
       labels = c(`FALSE` = "Other genes", `TRUE` = "Hub candidates")
     ) +
     ggplot2::labs(
-      title = "Hub-gene candidates",
-      x = "Intramodular connectivity (kWithin)",
+      title = paste0(
+        "Hub-gene candidates: ",
+        if (identical(connectivity_mode, "tom")) "TOM-based" else "scalable adjacency"
+      ),
+      x = if (identical(connectivity_mode, "tom")) {
+        "TOM-based intramodular connectivity (kWithin)"
+      } else {
+        "Adjacency-based intramodular connectivity (kWithin)"
+      },
       y = "Absolute module membership",
       color = NULL
     ) +
@@ -277,6 +437,7 @@ run_hub_analysis <- function(session_dir,
       modules = modules,
       min_module_membership = min_module_membership,
       connectivity_quantile = connectivity_quantile,
+      connectivity_mode = connectivity_mode,
       trait = trait,
       trait_method = trait_method
     ),

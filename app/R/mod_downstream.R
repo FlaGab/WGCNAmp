@@ -14,6 +14,16 @@ downstream_selected <- function(report, parameter, available, default_count = 1L
   utils::head(available, default_count)
 }
 
+format_storage_size <- function(bytes) {
+  if (!is.numeric(bytes) || length(bytes) != 1L || !is.finite(bytes) || bytes <= 0) {
+    return("0 B")
+  }
+  units <- c("B", "KB", "MB", "GB", "TB")
+  unit <- min(floor(log(bytes, base = 1024)) + 1L, length(units))
+  value <- bytes / 1024^(unit - 1L)
+  paste0(format(round(value, if (value < 10) 1L else 0L), trim = TRUE), " ", units[[unit]])
+}
+
 downstream_stage_heading <- function(step, title, description, ns) {
   shiny::div(
     class = "stage-heading",
@@ -40,7 +50,7 @@ hubAnalysisUI <- function(id) {
     downstream_stage_heading(
       5,
       "Hub genes",
-      "Rank genes within selected modules using WGCNA module membership and intramodular soft connectivity.",
+      "Rank genes using module membership and either scalable adjacency connectivity or notebook-compatible TOM connectivity.",
       ns
     ),
     shiny::uiOutput(ns("prerequisite_notice")),
@@ -52,6 +62,17 @@ hubAnalysisUI <- function(id) {
         bslib::card_header("Hub selection"),
         shiny::uiOutput(ns("network_selector")),
         shiny::uiOutput(ns("module_selector")),
+        shiny::h3("Connectivity definition"),
+        shiny::radioButtons(
+          ns("connectivity_mode"),
+          label = NULL,
+          choices = c(
+            "Scalable adjacency — recompute selected modules" = "adjacency",
+            "TOM-based — reproduce the notebook definition" = "tom"
+          ),
+          selected = "adjacency"
+        ),
+        shiny::uiOutput(ns("connectivity_guidance")),
         shiny::div(
           class = "form-grid form-grid-2",
           shiny::sliderInput(
@@ -68,13 +89,6 @@ hubAnalysisUI <- function(id) {
             choices = c("Pearson" = "pearson", "Spearman" = "spearman")
           )
         ),
-        shiny::div(
-          class = "selection-guidance",
-          shiny::icon("circle-info"),
-          shiny::span(
-            "Connectivity is calculated only inside selected modules with WGCNA softConnectivity(), avoiding a multi-gigabyte full TOM load."
-          )
-        )
       ),
       shiny::div(
         bslib::card(
@@ -113,7 +127,8 @@ hubAnalysisServer <- function(id, selected_session, on_complete = NULL) {
       !is.null(path) && stage_dependencies_ready(path, "step5")
     })
     shiny::observeEvent(selected_path(), {
-      report(load_hub_report(selected_path()))
+      current_report <- load_hub_report(selected_path())
+      report(current_report)
       run_error(NULL)
       current <- tryCatch(
         downstream_control_spec(selected_path()),
@@ -124,6 +139,25 @@ hubAnalysisServer <- function(id, selected_session, on_complete = NULL) {
       )
       spec(current)
       if (!is.null(current)) load_error(NULL)
+      if (!is.null(current_report)) {
+        parameters <- current_report$parameters
+        shiny::updateRadioButtons(
+          session,
+          "connectivity_mode",
+          selected = parameters$connectivity_mode %||% "adjacency"
+        )
+        shiny::updateSliderInput(
+          session, "min_mm", value = parameters$min_module_membership
+        )
+        shiny::updateSliderInput(
+          session,
+          "connectivity_quantile",
+          value = parameters$connectivity_quantile
+        )
+        shiny::updateSelectInput(
+          session, "trait_method", selected = parameters$trait_method
+        )
+      }
     }, ignoreNULL = TRUE)
 
     output$stage_badge <- shiny::renderUI({
@@ -184,18 +218,71 @@ hubAnalysisServer <- function(id, selected_session, on_complete = NULL) {
         downstream_metric(length(current$continuous_traits), "continuous traits")
       )
     })
+    output$connectivity_guidance <- shiny::renderUI({
+      current <- spec()
+      if (identical(input$connectivity_mode %||% "adjacency", "adjacency")) {
+        return(shiny::div(
+          class = "selection-guidance",
+          shiny::icon("bolt"),
+          shiny::span(
+            shiny::strong("Scalable adjacency mode. "),
+            "WGCNA softConnectivity() recomputes connectivity only for the selected modules. It is faster and avoids loading stored TOM matrices, but its kWithin values are not identical to the notebook's TOM-based values."
+          )
+        ))
+      }
+      if (is.null(current)) return(NULL)
+      tom <- current$tom
+      if (!isTRUE(tom$available)) {
+        return(shiny::div(
+          class = "selection-guidance network-memory-warning",
+          shiny::icon("triangle-exclamation"),
+          shiny::span(
+            shiny::strong("TOM mode is unavailable. "),
+            tom$message %||% "No compatible TOM artifact was found."
+          )
+        ))
+      }
+      shiny::div(
+        class = "selection-guidance network-memory-warning",
+        shiny::icon("hard-drive"),
+        shiny::span(
+          shiny::strong("Notebook-compatible TOM mode. "),
+          if (identical(tom$method, "blockwise")) {
+            paste0(
+              "Stored TOM blocks are loaded sequentially, and only blocks containing selected modules are analysed. The manifest contains ",
+              tom$blocks, " block(s), using ", format_storage_size(tom$bytes), " on disk. "
+            )
+          } else {
+            paste0(
+              "The full stored TOM matrix is loaded, using ",
+              format_storage_size(tom$bytes), " on disk. "
+            )
+          },
+          "Memory use can exceed the file size and the analysis can take substantially longer."
+        )
+      )
+    })
     output$run_control <- shiny::renderUI({
       button <- shiny::actionButton(
         session$ns("run"), "Find hub genes",
         icon = shiny::icon("circle-nodes"), class = "btn-primary run-stage-button"
       )
-      if (!ready() || is.null(spec())) button$attribs$disabled <- "disabled"
+      tom_unavailable <- identical(
+        input$connectivity_mode %||% "adjacency", "tom"
+      ) && (is.null(spec()) || !isTRUE(spec()$tom$available))
+      if (!ready() || is.null(spec()) || tom_unavailable) {
+        button$attribs$disabled <- "disabled"
+      }
       button
     })
     shiny::observeEvent(input$run, {
       tryCatch({
         modules <- input$modules %||% character()
         if (length(modules) == 0L) stop("Select at least one module.", call. = FALSE)
+        connectivity_mode <- input$connectivity_mode %||% "adjacency"
+        if (identical(connectivity_mode, "tom") && !isTRUE(spec()$tom$available)) {
+          stop(spec()$tom$message %||% "No compatible TOM artifact was found.", call. = FALSE)
+        }
         run_error(NULL)
         result <- shiny::withProgress(
           message = "Calculating hub-gene scores", value = 0.15,
@@ -206,6 +293,7 @@ hubAnalysisServer <- function(id, selected_session, on_complete = NULL) {
               modules = modules,
               min_module_membership = input$min_mm,
               connectivity_quantile = input$connectivity_quantile,
+              connectivity_mode = connectivity_mode,
               trait = input$trait,
               trait_method = input$trait_method,
               verbose = FALSE
@@ -242,12 +330,19 @@ hubAnalysisServer <- function(id, selected_session, on_complete = NULL) {
           downstream_metric(current$genes, "module genes scored"),
           downstream_metric(current$hubs, "hub candidates"),
           downstream_metric(length(current$parameters$modules), "modules"),
-          downstream_metric(current$parameters$network_type, "network")
+          downstream_metric(
+            if (identical(current$parameters$connectivity_mode, "tom")) {
+              "TOM-based"
+            } else {
+              "Scalable adjacency"
+            },
+            "connectivity"
+          )
         ),
         bslib::navset_card_tab(
           title = "Hub results",
           bslib::nav_panel(
-            "Connectivity plot", shiny::plotOutput(session$ns("hub_plot"), height = "600px")
+            "Hub score plot", shiny::plotOutput(session$ns("hub_plot"), height = "600px")
           ),
           bslib::nav_panel(
             "Hub table",

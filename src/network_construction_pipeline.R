@@ -193,6 +193,12 @@ build_blockwise_network <- function(expression_data,
     pattern = "^TOM-bw.*[.]RData$",
     full.names = TRUE
   )
+  block_number <- suppressWarnings(as.integer(sub(
+    ".*block[.]([0-9]+)[.]RData$", "\\1", basename(tom_files)
+  )))
+  if (length(tom_files) > 1L && all(!is.na(block_number))) {
+    tom_files <- tom_files[order(block_number)]
+  }
   list(
     network = network,
     tom = list(

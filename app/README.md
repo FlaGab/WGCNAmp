@@ -45,7 +45,8 @@ The current milestone provides:
   and available networks, including reference-level selection, automatic
   single-level exclusion, contrast previews, correlation tables, and heatmaps;
 - WGCNA hub-gene ranking with dynamic network, module, threshold, and optional
-  gene-significance controls;
+  gene-significance controls, using either scalable adjacency connectivity or
+  notebook-compatible stored TOM connectivity;
 - local Arabidopsis GO enrichment with selectable modules, ontology, cutoffs,
   redundancy reduction, result tables, and plots;
 - dynamic normalized-expression, module-summary, and eigengene visualizations
