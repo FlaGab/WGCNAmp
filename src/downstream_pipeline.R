@@ -485,7 +485,9 @@ parse_gene_ratio <- function(values) {
   }, numeric(1))
 }
 
-enrichment_summary_plot <- function(results, show_categories = 15L) {
+enrichment_summary_plot <- function(results,
+                                    show_categories = 15L,
+                                    title = "GO enrichment") {
   if (nrow(results) == 0L) {
     return(
       ggplot2::ggplot() +
@@ -520,7 +522,7 @@ enrichment_summary_plot <- function(results, show_categories = 15L) {
     ggplot2::facet_wrap(~module, scales = "free_y") +
     ggplot2::scale_color_viridis_c(direction = -1, option = "C") +
     ggplot2::labs(
-      title = "GO enrichment",
+      title = title,
       x = "Gene ratio",
       y = NULL,
       color = "Adjusted p-value",
@@ -530,9 +532,59 @@ enrichment_summary_plot <- function(results, show_categories = 15L) {
     ggplot2::theme(panel.grid.minor = ggplot2::element_blank())
 }
 
+map_tair_to_entrez <- function(genes,
+                               org_db = NULL,
+                               mapping_function = NULL) {
+  genes <- unique(as.character(genes))
+  genes <- genes[!is.na(genes) & nzchar(genes)]
+  if (length(genes) == 0L) {
+    return(data.frame(
+      tair_id = character(), entrez_id = character(),
+      stringsAsFactors = FALSE
+    ))
+  }
+  if (is.null(mapping_function)) {
+    required <- c("AnnotationDbi", "org.At.tair.db")
+    available <- vapply(required, function(package) {
+      suppressPackageStartupMessages(requireNamespace(package, quietly = TRUE))
+    }, logical(1))
+    missing <- required[!available]
+    if (length(missing) > 0L) {
+      stop(
+        "Install identifier-mapping packages: ", paste(missing, collapse = ", "),
+        call. = FALSE
+      )
+    }
+    if (is.null(org_db)) {
+      org_db <- getExportedValue("org.At.tair.db", "org.At.tair.db")
+    }
+    mapped <- AnnotationDbi::mapIds(
+      org_db,
+      keys = genes,
+      column = "ENTREZID",
+      keytype = "TAIR",
+      multiVals = "first"
+    )
+  } else {
+    mapped <- mapping_function(genes)
+  }
+  if (length(mapped) != length(genes)) {
+    stop("The TAIR-to-Entrez mapper returned an unexpected number of IDs.", call. = FALSE)
+  }
+  if (is.null(names(mapped))) names(mapped) <- genes
+  mapped <- as.character(mapped[genes])
+  mapped[is.na(mapped) | !nzchar(mapped)] <- NA_character_
+  data.frame(
+    tair_id = genes,
+    entrez_id = unname(mapped),
+    stringsAsFactors = FALSE
+  )
+}
+
 run_module_enrichment <- function(session_dir,
                                   network_type = "hc",
                                   modules,
+                                  database = c("GO", "KEGG"),
                                   ontology = "BP",
                                   p_adjust_method = "BH",
                                   p_value_cutoff = 0.05,
@@ -547,7 +599,15 @@ run_module_enrichment <- function(session_dir,
                                   enrich_function = NULL,
                                   simplify_function = NULL,
                                   org_db = NULL,
+                                  mapping_function = NULL,
+                                  kegg_organism = "ath",
+                                  kegg_key_type = "ncbi-geneid",
                                   verbose = TRUE) {
+  database <- if (missing(database)) {
+    "GO"
+  } else {
+    match.arg(toupper(database), c("GO", "KEGG"))
+  }
   inputs <- load_module_trait_inputs(session_dir)
   expression_genes <- colnames(inputs$data$exprData)
   networks <- downstream_networks(inputs$network_result)
@@ -560,11 +620,23 @@ run_module_enrichment <- function(session_dir,
   if (length(unknown) > 0L) {
     stop("Unknown modules: ", paste(unknown, collapse = ", "), call. = FALSE)
   }
-  if (!ontology %in% c("BP", "MF", "CC", "ALL")) {
+  if (identical(database, "GO") && !ontology %in% c("BP", "MF", "CC", "ALL")) {
     stop("Ontology must be BP, MF, CC, or ALL.", call. = FALSE)
   }
+  if (!is.numeric(min_gene_set_size) || length(min_gene_set_size) != 1L ||
+      is.na(min_gene_set_size) || min_gene_set_size < 1) {
+    stop("Minimum gene-set size must be a positive number.", call. = FALSE)
+  }
+  if (!is.numeric(max_gene_set_size) || length(max_gene_set_size) != 1L ||
+      is.na(max_gene_set_size) || max_gene_set_size < min_gene_set_size) {
+    stop("Maximum gene-set size must be at least the minimum gene-set size.", call. = FALSE)
+  }
   if (is.null(enrich_function)) {
-    required <- c("clusterProfiler", "org.At.tair.db")
+    required <- if (identical(database, "GO")) {
+      c("clusterProfiler", "org.At.tair.db")
+    } else {
+      "clusterProfiler"
+    }
     available <- vapply(required, function(package) {
       suppressPackageStartupMessages(requireNamespace(package, quietly = TRUE))
     }, logical(1))
@@ -572,35 +644,88 @@ run_module_enrichment <- function(session_dir,
     if (length(missing) > 0L) {
       stop("Install enrichment packages: ", paste(missing, collapse = ", "), call. = FALSE)
     }
-    enrich_function <- clusterProfiler::enrichGO
+    enrich_function <- if (identical(database, "GO")) {
+      clusterProfiler::enrichGO
+    } else {
+      clusterProfiler::enrichKEGG
+    }
   }
-  if (is.null(org_db)) {
+  if (identical(database, "GO") && is.null(org_db)) {
     org_db <- getExportedValue("org.At.tair.db", "org.At.tair.db")
   }
-  if (isTRUE(simplify_terms) && is.null(simplify_function) &&
+  if (identical(database, "GO") && isTRUE(simplify_terms) && is.null(simplify_function) &&
       suppressPackageStartupMessages(requireNamespace("clusterProfiler", quietly = TRUE))) {
     simplify_function <- clusterProfiler::simplify
   }
 
-  universe <- names(colors)
-  results_by_module <- list()
-  for (module in modules) {
-    genes <- names(colors)[colors == module]
-    enrichment <- enrich_function(
-      gene = genes,
-      OrgDb = org_db,
-      keyType = "TAIR",
-      ont = ontology,
-      pvalueCutoff = p_value_cutoff,
-      pAdjustMethod = p_adjust_method,
-      universe = universe,
-      qvalueCutoff = q_value_cutoff,
-      minGSSize = as.integer(min_gene_set_size),
-      maxGSSize = as.integer(max_gene_set_size),
-      readable = FALSE
+  tair_universe <- names(colors)
+  id_mapping <- NULL
+  mapping_summary <- NULL
+  if (identical(database, "KEGG")) {
+    id_mapping <- map_tair_to_entrez(
+      tair_universe,
+      org_db = org_db,
+      mapping_function = mapping_function
     )
+    universe <- unique(stats::na.omit(id_mapping$entrez_id))
+    if (length(universe) == 0L) {
+      stop("None of the network TAIR identifiers could be mapped to Entrez IDs for KEGG.", call. = FALSE)
+    }
+    mapping_summary <- list(
+      input_genes = nrow(id_mapping),
+      mapped_genes = sum(!is.na(id_mapping$entrez_id)),
+      unique_entrez_genes = length(universe),
+      unmapped_genes = sum(is.na(id_mapping$entrez_id)),
+      table = id_mapping
+    )
+  } else {
+    universe <- tair_universe
+  }
+  results_by_module <- list()
+  module_mapping <- list()
+  for (module in modules) {
+    tair_genes <- names(colors)[colors == module]
+    if (identical(database, "KEGG")) {
+      genes <- unique(stats::na.omit(
+        id_mapping$entrez_id[match(tair_genes, id_mapping$tair_id)]
+      ))
+      module_mapping[[module]] <- data.frame(
+        module = module,
+        input_genes = length(tair_genes),
+        mapped_genes = sum(!is.na(id_mapping$entrez_id[match(tair_genes, id_mapping$tair_id)])),
+        unique_entrez_genes = length(genes),
+        stringsAsFactors = FALSE
+      )
+      if (length(genes) == 0L) next
+      enrichment <- enrich_function(
+        gene = genes,
+        organism = kegg_organism,
+        keyType = kegg_key_type,
+        pvalueCutoff = p_value_cutoff,
+        pAdjustMethod = p_adjust_method,
+        universe = universe,
+        qvalueCutoff = q_value_cutoff,
+        minGSSize = as.integer(min_gene_set_size),
+        maxGSSize = as.integer(max_gene_set_size)
+      )
+    } else {
+      genes <- tair_genes
+      enrichment <- enrich_function(
+        gene = genes,
+        OrgDb = org_db,
+        keyType = "TAIR",
+        ont = ontology,
+        pvalueCutoff = p_value_cutoff,
+        pAdjustMethod = p_adjust_method,
+        universe = universe,
+        qvalueCutoff = q_value_cutoff,
+        minGSSize = as.integer(min_gene_set_size),
+        maxGSSize = as.integer(max_gene_set_size),
+        readable = FALSE
+      )
+    }
     table <- as.data.frame(enrichment)
-    if (isTRUE(simplify_terms) && nrow(table) > 0L &&
+    if (identical(database, "GO") && isTRUE(simplify_terms) && nrow(table) > 0L &&
         !is.null(simplify_function) && !identical(ontology, "ALL")) {
       enrichment <- simplify_function(
         enrichment,
@@ -613,33 +738,55 @@ run_module_enrichment <- function(session_dir,
     }
     if (nrow(table) > 0L) {
       table$module <- module
+      table$database <- database
       results_by_module[[module]] <- table
     }
   }
+  if (identical(database, "KEGG")) {
+    mapping_summary$modules <- rbind_enrichment_tables(module_mapping)
+  }
   combined <- rbind_enrichment_tables(results_by_module)
   rownames(combined) <- NULL
-  plot <- enrichment_summary_plot(combined, as.integer(show_categories))
+  plot <- enrichment_summary_plot(
+    combined,
+    as.integer(show_categories),
+    paste(database, "enrichment")
+  )
 
   output_dir <- file.path(session_dir, "out", "GO")
   plots_dir <- file.path(session_dir, "plots")
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   dir.create(plots_dir, recursive = TRUE, showWarnings = FALSE)
-  files <- list(report = NULL, combined = NULL, module_tables = list(), plot = NULL)
+  files <- list(
+    report = NULL, typed_report = NULL, combined = NULL,
+    module_tables = list(), mapping = NULL, plot = NULL
+  )
   if (save_artifacts) {
-    files$combined <- file.path(output_dir, "6_go_enrichment.tsv")
+    database_slug <- tolower(database)
+    files$combined <- file.path(output_dir, paste0("6_", database_slug, "_enrichment.tsv"))
     utils::write.table(
       combined, files$combined, sep = "\t", quote = FALSE, row.names = FALSE
     )
     for (module in names(results_by_module)) {
       path <- file.path(
         output_dir,
-        paste0("6_", safe_module_filename(module), "_", ontology, "_enrichment.csv")
+        paste0(
+          "6_", safe_module_filename(module), "_",
+          if (identical(database, "GO")) ontology else "KEGG",
+          "_enrichment.csv"
+        )
       )
       utils::write.csv(results_by_module[[module]], path, row.names = FALSE)
       files$module_tables[[module]] <- path
     }
+    if (identical(database, "KEGG")) {
+      files$mapping <- file.path(output_dir, "6_kegg_identifier_mapping.tsv")
+      utils::write.table(
+        id_mapping, files$mapping, sep = "\t", quote = FALSE, row.names = FALSE
+      )
+    }
     if (create_plot) {
-      files$plot <- file.path(plots_dir, "6_go_enrichment.pdf")
+      files$plot <- file.path(plots_dir, paste0("6_", database_slug, "_enrichment.pdf"))
       ggplot2::ggsave(
         files$plot,
         plot,
@@ -653,18 +800,22 @@ run_module_enrichment <- function(session_dir,
     parameters = list(
       network_type = network_type,
       modules = modules,
-      ontology = ontology,
+      database = database,
+      ontology = if (identical(database, "GO")) ontology else NULL,
+      kegg_organism = if (identical(database, "KEGG")) kegg_organism else NULL,
+      kegg_key_type = if (identical(database, "KEGG")) kegg_key_type else NULL,
       p_adjust_method = p_adjust_method,
       p_value_cutoff = p_value_cutoff,
       q_value_cutoff = q_value_cutoff,
       min_gene_set_size = min_gene_set_size,
       max_gene_set_size = max_gene_set_size,
-      simplify_terms = simplify_terms,
-      similarity_cutoff = similarity_cutoff,
+      simplify_terms = if (identical(database, "GO")) simplify_terms else NULL,
+      similarity_cutoff = if (identical(database, "GO")) similarity_cutoff else NULL,
       show_categories = show_categories
     ),
     terms = nrow(combined),
     modules_with_terms = length(results_by_module),
+    mapping = mapping_summary,
     results = combined,
     plot = plot,
     files = files,
@@ -672,12 +823,17 @@ run_module_enrichment <- function(session_dir,
   )
   class(report) <- c("wgcnamp_enrichment_report", class(report))
   if (save_artifacts) {
+    files$typed_report <- file.path(
+      output_dir, paste0("6_", tolower(database), "_enrichment_report.rds")
+    )
     files$report <- file.path(output_dir, "6_enrichment_report.rds")
+    report$files$typed_report <- files$typed_report
     report$files$report <- files$report
+    saveRDS(report, files$typed_report)
     saveRDS(report, files$report)
   }
   if (verbose) {
-    message("Enrichment complete: ", report$terms, " terms across ",
+    message(database, " enrichment complete: ", report$terms, " terms across ",
             report$modules_with_terms, " module(s).")
   }
   report

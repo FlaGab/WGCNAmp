@@ -49,8 +49,9 @@ The current milestone provides:
 - WGCNA hub-gene ranking with dynamic network, module, threshold, and optional
   gene-significance controls, using either scalable adjacency connectivity or
   notebook-compatible stored TOM connectivity;
-- local Arabidopsis GO enrichment with selectable modules, ontology, cutoffs,
-  redundancy reduction, result tables, and plots;
+- Arabidopsis GO and KEGG enrichment with selectable modules, database-specific
+  controls, TAIR-to-Entrez mapping diagnostics, cutoffs, result tables, and
+  separate plots and artifacts;
 - dynamic normalized-expression, module-summary, and eigengene visualizations
   with selectable genes and sample grouping;
 - versioned persistent session state that restores the last open stage and

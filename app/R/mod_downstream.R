@@ -359,8 +359,8 @@ enrichmentUI <- function(id) {
   shiny::tagList(
     downstream_stage_heading(
       6,
-      "GO enrichment",
-      "Test selected WGCNA modules for over-represented Arabidopsis Gene Ontology terms.",
+      "Functional enrichment",
+      "Test selected WGCNA modules for over-represented Arabidopsis GO terms or KEGG pathways.",
       ns
     ),
     shiny::uiOutput(ns("prerequisite_notice")),
@@ -372,31 +372,23 @@ enrichmentUI <- function(id) {
         bslib::card_header("Enrichment settings"),
         shiny::uiOutput(ns("network_selector")),
         shiny::uiOutput(ns("module_selector")),
+        shiny::radioButtons(
+          ns("database"), "Enrichment database",
+          choices = c("Gene Ontology (GO)" = "GO", "KEGG pathways" = "KEGG"),
+          selected = "GO", inline = TRUE
+        ),
+        shiny::uiOutput(ns("database_controls")),
         shiny::div(
           class = "form-grid form-grid-2",
-          shiny::selectInput(
-            ns("ontology"), "Ontology",
-            choices = c(
-              "Biological process" = "BP", "Molecular function" = "MF",
-              "Cellular component" = "CC", "All ontologies" = "ALL"
-            )
-          ),
           shiny::selectInput(
             ns("p_adjust"), "Multiple-testing correction",
             choices = c("Benjamini-Hochberg" = "BH", "Benjamini-Yekutieli" = "BY", "Bonferroni" = "bonferroni")
           ),
           shiny::numericInput(ns("p_cutoff"), "P-value cutoff", 0.05, min = 0, max = 1, step = 0.01),
           shiny::numericInput(ns("q_cutoff"), "Q-value cutoff", 0.2, min = 0, max = 1, step = 0.05),
-          shiny::numericInput(ns("min_size"), "Minimum GO gene-set size", 10, min = 1, step = 1),
+          shiny::numericInput(ns("min_size"), "Minimum gene-set size", 10, min = 1, step = 1),
+          shiny::numericInput(ns("max_size"), "Maximum gene-set size", 500, min = 1, step = 10),
           shiny::numericInput(ns("show_categories"), "Terms shown per module", 15, min = 1, step = 1)
-        ),
-        shiny::checkboxInput(ns("simplify"), "Remove semantically redundant GO terms", TRUE),
-        shiny::conditionalPanel(
-          condition = sprintf("input['%s']", ns("simplify")),
-          shiny::sliderInput(
-            ns("similarity_cutoff"), "Semantic-similarity cutoff",
-            min = 0.4, max = 0.95, value = 0.7, step = 0.05
-          )
         )
       ),
       shiny::div(
@@ -409,7 +401,7 @@ enrichmentUI <- function(id) {
           class = "run-card",
           bslib::card_header("Run enrichment"),
           shiny::uiOutput(ns("run_control")),
-          shiny::p(class = "run-note", "The full network gene set is used as the enrichment universe.")
+          shiny::p(class = "run-note", "The full network gene set is used as the enrichment background.")
         ),
         shiny::uiOutput(ns("run_feedback"))
       )
@@ -431,17 +423,36 @@ enrichmentServer <- function(id, selected_session, on_complete = NULL) {
       path <- selected_path()
       !is.null(path) && stage_dependencies_ready(path, "step6")
     })
+    selected_database <- shiny::reactive({
+      database <- toupper(input$database %||% "GO")
+      if (!database %in% c("GO", "KEGG")) "GO" else database
+    })
     missing_packages <- shiny::reactive({
-      packages <- c("clusterProfiler", "org.At.tair.db", "GO.db")
+      packages <- if (identical(selected_database(), "GO")) {
+        c("clusterProfiler", "org.At.tair.db", "GO.db")
+      } else {
+        c("clusterProfiler", "org.At.tair.db", "AnnotationDbi")
+      }
       available <- vapply(packages, function(package) {
         suppressPackageStartupMessages(requireNamespace(package, quietly = TRUE))
       }, logical(1))
       packages[!available]
     })
     shiny::observeEvent(selected_path(), {
-      report(load_enrichment_report(selected_path()))
+      current_report <- load_enrichment_report(selected_path())
+      report(current_report)
       run_error(NULL)
       spec(tryCatch(downstream_control_spec(selected_path()), error = function(error) NULL))
+      parameters <- if (is.null(current_report)) list() else current_report$parameters
+      shiny::updateRadioButtons(
+        session, "database", selected = parameters$database %||% "GO"
+      )
+      shiny::updateSelectInput(session, "p_adjust", selected = parameters$p_adjust_method %||% "BH")
+      shiny::updateNumericInput(session, "p_cutoff", value = parameters$p_value_cutoff %||% 0.05)
+      shiny::updateNumericInput(session, "q_cutoff", value = parameters$q_value_cutoff %||% 0.2)
+      shiny::updateNumericInput(session, "min_size", value = parameters$min_gene_set_size %||% 10)
+      shiny::updateNumericInput(session, "max_size", value = parameters$max_gene_set_size %||% 500)
+      shiny::updateNumericInput(session, "show_categories", value = parameters$show_categories %||% 15)
     }, ignoreNULL = TRUE)
     output$stage_badge <- shiny::renderUI({
       report()
@@ -478,10 +489,55 @@ enrichmentServer <- function(id, selected_session, on_complete = NULL) {
         selected = downstream_selected(report(), "modules", available, min(3L, length(available)))
       )
     })
+    output$database_controls <- shiny::renderUI({
+      current <- report()
+      parameters <- if (is.null(current)) list() else current$parameters
+      if (identical(selected_database(), "KEGG")) {
+        return(shiny::div(
+          class = "selection-guidance",
+          shiny::icon("circle-info"),
+          shiny::div(
+            shiny::strong("Arabidopsis thaliana pathways (organism code: ath)"),
+            shiny::p(
+              "Network TAIR identifiers are converted to Entrez Gene IDs before analysis. ",
+              "Unmapped genes are excluded and counted in the result. KEGG queries require internet access."
+            )
+          )
+        ))
+      }
+      shiny::tagList(
+        shiny::selectInput(
+          session$ns("ontology"), "Ontology",
+          choices = c(
+            "Biological process" = "BP", "Molecular function" = "MF",
+            "Cellular component" = "CC", "All ontologies" = "ALL"
+          ),
+          selected = parameters$ontology %||% "BP"
+        ),
+        shiny::checkboxInput(
+          session$ns("simplify"),
+          "Remove semantically redundant GO terms",
+          parameters$simplify_terms %||% TRUE
+        ),
+        shiny::conditionalPanel(
+          condition = sprintf("input['%s']", session$ns("simplify")),
+          shiny::sliderInput(
+            session$ns("similarity_cutoff"), "Semantic-similarity cutoff",
+            min = 0.4, max = 0.95,
+            value = parameters$similarity_cutoff %||% 0.7, step = 0.05
+          )
+        )
+      )
+    })
     output$dependency_status <- shiny::renderUI({
       missing <- missing_packages()
       if (length(missing) == 0L) {
-        return(shiny::div(class = "dependency-ready", shiny::icon("circle-check"), "GO annotation packages are available."))
+        label <- if (identical(selected_database(), "GO")) {
+          "GO annotation packages are available."
+        } else {
+          "KEGG and identifier-mapping packages are available."
+        }
+        return(shiny::div(class = "dependency-ready", shiny::icon("circle-check"), label))
       }
       shiny::div(
         class = "dependency-missing", shiny::icon("triangle-exclamation"),
@@ -490,7 +546,7 @@ enrichmentServer <- function(id, selected_session, on_complete = NULL) {
     })
     output$run_control <- shiny::renderUI({
       button <- shiny::actionButton(
-        session$ns("run"), "Run GO enrichment",
+        session$ns("run"), paste("Run", selected_database(), "enrichment"),
         icon = shiny::icon("flask"), class = "btn-primary run-stage-button"
       )
       if (!ready() || is.null(spec()) || length(missing_packages()) > 0L) {
@@ -502,13 +558,19 @@ enrichmentServer <- function(id, selected_session, on_complete = NULL) {
       tryCatch({
         modules <- input$modules %||% character()
         if (length(modules) == 0L) stop("Select at least one module.", call. = FALSE)
+        if (input$max_size < input$min_size) {
+          stop("Maximum gene-set size must be at least the minimum gene-set size.", call. = FALSE)
+        }
+        database <- selected_database()
         run_error(NULL)
-        result <- shiny::withProgress(message = "Running GO enrichment", value = 0.1, {
+        result <- shiny::withProgress(message = paste("Running", database, "enrichment"), value = 0.1, {
           value <- run_module_enrichment(
             session_dir = selected_path(), network_type = selected_network(),
-            modules = modules, ontology = input$ontology,
+            modules = modules, database = database,
+            ontology = input$ontology %||% "BP",
             p_adjust_method = input$p_adjust, p_value_cutoff = input$p_cutoff,
             q_value_cutoff = input$q_cutoff, min_gene_set_size = input$min_size,
+            max_gene_set_size = input$max_size,
             simplify_terms = isTRUE(input$simplify),
             similarity_cutoff = input$similarity_cutoff %||% 0.7,
             show_categories = input$show_categories, verbose = FALSE
@@ -523,7 +585,7 @@ enrichmentServer <- function(id, selected_session, on_complete = NULL) {
         shiny::showNotification(conditionMessage(error), type = "error", duration = NULL)
       })
     })
-    output$run_feedback <- downstream_feedback(report, run_error, "GO enrichment complete")
+    output$run_feedback <- downstream_feedback(report, run_error, "Enrichment complete")
     output$enrichment_plot <- shiny::renderPlot({
       shiny::req(report())
       print(report()$plot)
@@ -537,15 +599,40 @@ enrichmentServer <- function(id, selected_session, on_complete = NULL) {
     output$results_panel <- shiny::renderUI({
       current <- report()
       if (is.null(current)) return(downstream_empty("No enrichment report yet."))
+      database <- current$parameters$database %||% "GO"
+      fourth_metric <- if (identical(database, "GO")) {
+        downstream_metric(current$parameters$ontology, "ontology")
+      } else {
+        downstream_metric(database, "database")
+      }
+      mapping_note <- NULL
+      if (identical(database, "KEGG") && !is.null(current$mapping)) {
+        mapping_note <- shiny::div(
+          class = "selection-guidance",
+          shiny::icon("circle-info"),
+          shiny::div(
+            shiny::strong("TAIR to Entrez mapping"),
+            shiny::p(
+              paste0(
+                format(current$mapping$mapped_genes, big.mark = ","), " of ",
+                format(current$mapping$input_genes, big.mark = ","),
+                " network genes mapped; ",
+                format(current$mapping$unmapped_genes, big.mark = ","), " were excluded."
+              )
+            )
+          )
+        )
+      }
       shiny::tagList(
-        downstream_results_heading("GO enrichment", current$completed_at),
+        downstream_results_heading(paste(database, "enrichment"), current$completed_at),
         shiny::div(
           class = "network-result-grid",
           downstream_metric(current$terms, "enriched terms"),
           downstream_metric(current$modules_with_terms, "modules with terms"),
           downstream_metric(length(current$parameters$modules), "modules tested"),
-          downstream_metric(current$parameters$ontology, "ontology")
+          fourth_metric
         ),
+        mapping_note,
         bslib::navset_card_tab(
           title = "Enrichment results",
           bslib::nav_panel("Dot plot", shiny::plotOutput(session$ns("enrichment_plot"), height = "680px")),

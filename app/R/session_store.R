@@ -16,7 +16,7 @@ stage_definitions <- function() {
       "Network construction",
       "Module–trait correlation",
       "Hub genes",
-      "GO enrichment",
+      "Functional enrichment",
       "Gene visualization"
     ),
     description = c(
