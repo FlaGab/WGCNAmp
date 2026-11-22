@@ -69,6 +69,49 @@ observed_trait_levels <- function(values) {
   unique(as.character(values))
 }
 
+module_trait_covariate_catalog <- function(metadata, traits = NULL) {
+  entries <- list()
+  add_entry <- function(source, name, values) {
+    supported <- is.numeric(values) || is.factor(values) ||
+      is.character(values) || is.logical(values)
+    if (!supported) return(invisible(NULL))
+    if (is.numeric(values)) {
+      observed <- unique(values[is.finite(values)])
+      type <- "numeric"
+      detail <- paste(length(observed), "distinct values")
+    } else {
+      observed <- observed_trait_levels(values)
+      type <- "categorical"
+      detail <- paste(length(observed), "levels")
+    }
+    if (length(observed) < 2L) return(invisible(NULL))
+    token <- paste(source, name, sep = "::")
+    entries[[token]] <<- data.frame(
+      token = token,
+      source = source,
+      column = name,
+      type = type,
+      label = paste0(
+        name, " — ", if (identical(source, "metadata")) "metadata" else "traits",
+        " · ", detail
+      ),
+      stringsAsFactors = FALSE
+    )
+    invisible(NULL)
+  }
+  for (name in names(metadata)) add_entry("metadata", name, metadata[[name]])
+  if (!is.null(traits)) {
+    for (name in names(traits)) add_entry("traits", name, traits[[name]])
+  }
+  if (length(entries) == 0L) {
+    return(data.frame(
+      token = character(), source = character(), column = character(),
+      type = character(), label = character(), stringsAsFactors = FALSE
+    ))
+  }
+  do.call(rbind, entries)
+}
+
 module_trait_control_spec <- function(session_dir) {
   inputs <- load_module_trait_inputs(session_dir)
   data <- inputs$data
@@ -122,6 +165,7 @@ module_trait_control_spec <- function(session_dir) {
     continuous = informative_continuous,
     continuous_counts = continuous_counts,
     skipped_continuous = skipped_continuous,
+    covariates = module_trait_covariate_catalog(metadata, traits),
     networks = networks
   )
 }
@@ -228,6 +272,244 @@ module_trait_heatmap <- function(result, title) {
     )
 }
 
+prepare_module_trait_covariates <- function(metadata,
+                                            traits,
+                                            covariates,
+                                            samples) {
+  catalog <- module_trait_covariate_catalog(metadata, traits)
+  covariates <- unique(covariates)
+  unknown <- setdiff(covariates, catalog$token)
+  if (length(unknown) > 0L) {
+    stop("Unknown model covariates: ", paste(unknown, collapse = ", "), call. = FALSE)
+  }
+  if (length(covariates) == 0L) {
+    return(list(data = data.frame(row.names = samples), catalog = catalog[0, ]))
+  }
+  if (is.null(rownames(metadata)) || !setequal(rownames(metadata), samples)) {
+    stop("Metadata and module eigengenes contain different samples.", call. = FALSE)
+  }
+  if (any(startsWith(covariates, "traits::")) &&
+      (is.null(traits) || is.null(rownames(traits)) ||
+       !setequal(rownames(traits), samples))) {
+    stop("Traits and module eigengenes contain different samples.", call. = FALSE)
+  }
+  selected_catalog <- catalog[match(covariates, catalog$token), , drop = FALSE]
+  values <- lapply(seq_len(nrow(selected_catalog)), function(index) {
+    entry <- selected_catalog[index, ]
+    source <- if (identical(entry$source, "metadata")) metadata else traits
+    value <- source[samples, entry$column]
+    if (identical(entry$type, "numeric")) {
+      value <- as.numeric(value)
+      value[!is.finite(value)] <- NA_real_
+      value
+    } else {
+      droplevels(factor(value))
+    }
+  })
+  names(values) <- paste0("covariate_", seq_along(values))
+  list(
+    data = as.data.frame(values, check.names = FALSE, row.names = samples),
+    catalog = selected_catalog
+  )
+}
+
+module_trait_adjusted_models <- function(eigengenes,
+                                         binary_matrix,
+                                         metadata,
+                                         traits = NULL,
+                                         covariates = character(),
+                                         confidence_level = 0.95,
+                                         p_adjust_method = "BH") {
+  eigengenes <- as.data.frame(eigengenes, check.names = FALSE)
+  binary_matrix <- as.data.frame(binary_matrix, check.names = FALSE)
+  samples <- rownames(eigengenes)
+  if (is.null(samples) || is.null(rownames(binary_matrix)) ||
+      !setequal(samples, rownames(binary_matrix))) {
+    stop("Eigengenes and categorical contrasts contain different samples.", call. = FALSE)
+  }
+  if (!is.numeric(confidence_level) || length(confidence_level) != 1L ||
+      confidence_level <= 0 || confidence_level >= 1) {
+    stop("'confidence_level' must be between 0 and 1.", call. = FALSE)
+  }
+  binary_matrix <- binary_matrix[samples, , drop = FALSE]
+  prepared <- prepare_module_trait_covariates(
+    metadata, traits, covariates, samples
+  )
+  covariate_name_map <- stats::setNames(
+    paste(prepared$catalog$source, prepared$catalog$column, sep = ": "),
+    names(prepared$data)
+  )
+  rows <- vector("list", ncol(eigengenes) * ncol(binary_matrix))
+  position <- 0L
+  for (contrast_name in colnames(binary_matrix)) {
+    contrast_values <- as.numeric(binary_matrix[[contrast_name]])
+    for (module_name in colnames(eigengenes)) {
+      position <- position + 1L
+      model_data <- data.frame(
+        outcome = as.numeric(eigengenes[[module_name]]),
+        contrast = contrast_values,
+        prepared$data,
+        check.names = FALSE
+      )
+      complete <- stats::complete.cases(model_data) &
+        is.finite(model_data$outcome) & is.finite(model_data$contrast)
+      model_data <- model_data[complete, , drop = FALSE]
+      covariate_columns <- setdiff(names(model_data), c("outcome", "contrast"))
+      for (column in covariate_columns) {
+        if (is.factor(model_data[[column]])) {
+          model_data[[column]] <- droplevels(model_data[[column]])
+        }
+      }
+      omitted_columns <- covariate_columns[vapply(
+        model_data[covariate_columns],
+        function(value) {
+          if (is.factor(value)) nlevels(value) < 2L else {
+            length(unique(value[is.finite(value)])) < 2L
+          }
+        },
+        logical(1)
+      )]
+      if (length(omitted_columns) > 0L) {
+        model_data <- model_data[setdiff(names(model_data), omitted_columns)]
+      }
+      observed_contrast <- sort(unique(model_data$contrast))
+      result <- list(
+        module = module_name,
+        contrast = contrast_name,
+        estimate = NA_real_,
+        std_error = NA_real_,
+        conf_low = NA_real_,
+        conf_high = NA_real_,
+        p_value = NA_real_,
+        fdr = NA_real_,
+        n = nrow(model_data),
+        residual_df = NA_real_,
+        r_squared = NA_real_,
+        adjusted_r_squared = NA_real_,
+        mean_0 = if (0 %in% observed_contrast) {
+          mean(model_data$outcome[model_data$contrast == 0])
+        } else NA_real_,
+        mean_1 = if (1 %in% observed_contrast) {
+          mean(model_data$outcome[model_data$contrast == 1])
+        } else NA_real_,
+        omitted_covariates = if (length(omitted_columns) > 0L) {
+          paste(unname(covariate_name_map[omitted_columns]), collapse = ", ")
+        } else NA_character_,
+        aliased_terms = NA_character_,
+        status = "ok"
+      )
+      if (nrow(model_data) < 3L || length(observed_contrast) != 2L) {
+        result$status <- "Insufficient complete observations or contrast levels"
+      } else {
+        fit <- tryCatch(
+          stats::lm(outcome ~ ., data = model_data),
+          error = function(error) error
+        )
+        if (inherits(fit, "error")) {
+          result$status <- conditionMessage(fit)
+        } else {
+          model_summary <- summary(fit)
+          coefficients <- model_summary$coefficients
+          result$residual_df <- fit$df.residual
+          result$r_squared <- model_summary$r.squared
+          result$adjusted_r_squared <- model_summary$adj.r.squared
+          aliased <- names(stats::coef(fit))[is.na(stats::coef(fit))]
+          if (length(aliased) > 0L) {
+            result$aliased_terms <- paste(aliased, collapse = ", ")
+          }
+          if (!"contrast" %in% rownames(coefficients) ||
+              is.na(coefficients["contrast", "Estimate"])) {
+            result$status <- "Contrast is aliased by the selected covariates"
+          } else if (fit$df.residual <= 0L) {
+            result$status <- "No residual degrees of freedom"
+          } else {
+            estimate <- coefficients["contrast", "Estimate"]
+            standard_error <- coefficients["contrast", "Std. Error"]
+            critical <- stats::qt(
+              1 - (1 - confidence_level) / 2,
+              df = fit$df.residual
+            )
+            result$estimate <- estimate
+            result$std_error <- standard_error
+            result$conf_low <- estimate - critical * standard_error
+            result$conf_high <- estimate + critical * standard_error
+            result$p_value <- coefficients["contrast", "Pr(>|t|)"]
+            if (length(aliased) > 0L) {
+              result$status <- "Rank deficient; aliased covariate terms were omitted"
+            } else if (length(omitted_columns) > 0L) {
+              result$status <- "Covariates without variation were omitted"
+            }
+          }
+        }
+      }
+      rows[[position]] <- as.data.frame(result, stringsAsFactors = FALSE)
+    }
+  }
+  table <- do.call(rbind, rows)
+  valid <- is.finite(table$p_value)
+  table$fdr[valid] <- stats::p.adjust(table$p_value[valid], method = p_adjust_method)
+  rownames(table) <- NULL
+  covariate_labels <- stats::setNames(
+    paste(prepared$catalog$source, prepared$catalog$column, sep = ": "),
+    prepared$catalog$token
+  )
+  formula_label <- paste(
+    "module eigengene ~ binary contrast",
+    if (length(covariate_labels) > 0L) {
+      paste("+", paste(unname(covariate_labels), collapse = " + "))
+    } else {
+      ""
+    }
+  )
+  list(
+    table = table,
+    covariates = covariates,
+    covariate_labels = covariate_labels,
+    confidence_level = confidence_level,
+    p_adjust_method = p_adjust_method,
+    formula = trimws(formula_label)
+  )
+}
+
+module_trait_model_heatmap <- function(result, title) {
+  table <- result$table
+  table$significance <- ifelse(
+    is.na(table$fdr), "",
+    ifelse(table$fdr < 0.001, "***",
+      ifelse(table$fdr < 0.01, "**", ifelse(table$fdr < 0.05, "*", ""))
+    )
+  )
+  table$label <- ifelse(
+    is.na(table$estimate),
+    "NA",
+    paste0(sprintf("%.2f", table$estimate), "\n", table$significance)
+  )
+  limit <- max(abs(table$estimate), na.rm = TRUE)
+  if (!is.finite(limit) || limit == 0) limit <- 1
+  ggplot2::ggplot(
+    table,
+    ggplot2::aes(x = contrast, y = module, fill = estimate)
+  ) +
+    ggplot2::geom_tile(color = "white", linewidth = 0.25) +
+    ggplot2::geom_text(ggplot2::aes(label = label), size = 2.8, lineheight = 0.9) +
+    ggplot2::scale_fill_gradient2(
+      low = "#2563eb", mid = "white", high = "#dc2626", midpoint = 0,
+      limits = c(-limit, limit), na.value = "#e5e7eb", name = "Contrast\ncoefficient"
+    ) +
+    ggplot2::labs(
+      title = title,
+      subtitle = paste0(result$formula, "; stars use ", result$p_adjust_method, " FDR"),
+      x = NULL,
+      y = NULL
+    ) +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(
+      panel.grid = ggplot2::element_blank(),
+      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
+      plot.title = ggplot2::element_text(face = "bold")
+    )
+}
+
 write_module_trait_matrix <- function(matrix, path) {
   output <- data.frame(module = rownames(matrix), matrix, check.names = FALSE)
   utils::write.table(
@@ -252,6 +534,10 @@ run_module_trait_analysis <- function(session_dir,
                                       selected_contrasts = NULL,
                                       network_types = c("hc", "kmeans"),
                                       continuous_method = "pearson",
+                                      fit_categorical_models = TRUE,
+                                      model_covariates = character(),
+                                      model_confidence_level = 0.95,
+                                      model_p_adjust_method = "BH",
                                       create_plots = TRUE,
                                       save_artifacts = TRUE,
                                       prepared_data = NULL,
@@ -264,6 +550,8 @@ run_module_trait_analysis <- function(session_dir,
   }
   continuous_traits <- unique(continuous_traits)
   categorical_variables <- unique(categorical_variables)
+  model_covariates <- unique(model_covariates)
+  if (!isTRUE(fit_categorical_models)) model_covariates <- character()
   network_types <- unique(network_types)
   if (length(continuous_traits) == 0L && length(categorical_variables) == 0L) {
     stop("Select at least one continuous or categorical trait.", call. = FALSE)
@@ -365,7 +653,11 @@ run_module_trait_analysis <- function(session_dir,
     eigengenes <- validate_module_trait_network(
       networks[[network_name]], samples, network_labels[[network_name]]
     )
-    network_results <- list(continuous = NULL, categorical = NULL)
+    network_results <- list(
+      continuous = NULL,
+      categorical = NULL,
+      categorical_model = NULL
+    )
 
     if (length(continuous_traits) > 0L) {
       continuous_result <- module_trait_correlations(
@@ -390,6 +682,24 @@ run_module_trait_analysis <- function(session_dir,
         paste(network_labels[[network_name]], "- categorical contrasts")
       )
       network_results$categorical <- categorical_result
+      if (isTRUE(fit_categorical_models)) {
+        model_result <- module_trait_adjusted_models(
+          eigengenes = eigengenes,
+          binary_matrix = binary_matrix,
+          metadata = metadata,
+          traits = prepared_data$traits,
+          covariates = model_covariates,
+          confidence_level = model_confidence_level,
+          p_adjust_method = model_p_adjust_method
+        )
+        model_result$plot <- module_trait_model_heatmap(
+          model_result,
+          paste0(
+            network_labels[[network_name]], " - categorical linear models"
+          )
+        )
+        network_results$categorical_model <- model_result
+      }
     }
     results[[network_name]] <- network_results
 
@@ -435,6 +745,59 @@ run_module_trait_analysis <- function(session_dir,
           files$plots[[paste0(network_name, "_", analysis_name)]] <- plot_path
         }
       }
+      if (!is.null(network_results$categorical_model)) {
+        model_prefix <- paste("4", network_name, "categorical_models", sep = "_")
+        model_table_path <- file.path(output_dir, paste0(model_prefix, ".tsv"))
+        utils::write.table(
+          network_results$categorical_model$table,
+          model_table_path,
+          sep = "\t",
+          quote = FALSE,
+          row.names = FALSE,
+          na = "NA"
+        )
+        files$tables[[paste0(network_name, "_categorical_model")]] <-
+          normalizePath(model_table_path, mustWork = TRUE)
+        if (create_plots) {
+          model_plot_path <- file.path(
+            plots_dir, paste0(model_prefix, ".pdf")
+          )
+          ggplot2::ggsave(
+            model_plot_path,
+            network_results$categorical_model$plot,
+            width = max(9, min(20, ncol(binary_matrix) * 1.3)),
+            height = max(6, min(24, ncol(eigengenes) * 0.42 + 2)),
+            bg = "white",
+            limitsize = FALSE
+          )
+          files$plots[[paste0(network_name, "_categorical_model")]] <-
+            model_plot_path
+        }
+      }
+    }
+  }
+
+  if (save_artifacts && isTRUE(fit_categorical_models) && !is.null(binary_matrix)) {
+    combined_models <- do.call(rbind, lapply(names(results), function(network_name) {
+      current <- results[[network_name]]$categorical_model
+      if (is.null(current)) return(NULL)
+      data.frame(
+        network = network_name,
+        current$table,
+        check.names = FALSE,
+        stringsAsFactors = FALSE
+      )
+    }))
+    if (!is.null(combined_models)) {
+      files$adjusted_models <- file.path(output_dir, "4_adjusted_categorical_models.tsv")
+      utils::write.table(
+        combined_models,
+        files$adjusted_models,
+        sep = "\t",
+        quote = FALSE,
+        row.names = FALSE,
+        na = "NA"
+      )
     }
   }
 
@@ -450,7 +813,11 @@ run_module_trait_analysis <- function(session_dir,
       colnames(binary_matrix)
     },
     network_types = network_types,
-    continuous_method = continuous_method
+    continuous_method = continuous_method,
+    fit_categorical_models = isTRUE(fit_categorical_models),
+    model_covariates = model_covariates,
+    model_confidence_level = model_confidence_level,
+    model_p_adjust_method = model_p_adjust_method
   )
   report <- list(
     parameters = parameters,

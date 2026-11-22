@@ -57,7 +57,16 @@ moduleTraitUI <- function(id) {
             shiny::checkboxInput(
               ns("drop_redundant"), "Drop redundant contrasts", value = TRUE
             )
-          )
+          ),
+          shiny::hr(),
+          shiny::h3("Categorical linear models"),
+          shiny::checkboxInput(
+            ns("fit_categorical_models"),
+            "Fit contrast models with optional covariate adjustment",
+            value = TRUE
+          ),
+          shiny::uiOutput(ns("model_covariate_selector")),
+          shiny::uiOutput(ns("model_formula_preview"))
         )
       ),
       shiny::div(
@@ -78,7 +87,7 @@ moduleTraitUI <- function(id) {
           shiny::uiOutput(ns("run_control")),
           shiny::p(
             class = "run-note",
-            "Running again replaces the stage-4 report, correlation tables, and selected heatmaps."
+            "Running again replaces the stage-4 report, correlation and model tables, and selected heatmaps."
           )
         ),
         shiny::uiOutput(ns("run_feedback"))
@@ -152,6 +161,13 @@ moduleTraitServer <- function(id, selected_session, on_complete = NULL) {
           session, "drop_redundant", value = parameters$drop_redundant
         )
       }
+      if (!is.null(parameters$fit_categorical_models)) {
+        shiny::updateCheckboxInput(
+          session,
+          "fit_categorical_models",
+          value = parameters$fit_categorical_models
+        )
+      }
     }, ignoreNULL = TRUE)
 
     selected_from_report <- function(parameter, available) {
@@ -204,11 +220,82 @@ moduleTraitServer <- function(id, selected_session, on_complete = NULL) {
       )
     })
 
+    available_model_covariates <- shiny::reactive({
+      current <- spec()
+      if (is.null(current) || nrow(current$covariates) == 0L) {
+        return(data.frame(token = character(), label = character()))
+      }
+      selected_primary <- input$categorical_variables %||% character()
+      current$covariates[
+        !current$covariates$column %in% selected_primary,
+        ,
+        drop = FALSE
+      ]
+    })
+
+    output$model_covariate_selector <- shiny::renderUI({
+      if (!isTRUE(input$fit_categorical_models)) return(NULL)
+      current <- spec()
+      selected_categorical <- input$categorical_variables %||% character()
+      if (is.null(current) || length(selected_categorical) == 0L) {
+        return(shiny::p(
+          class = "field-help",
+          "Select categorical metadata to configure its regression model."
+        ))
+      }
+      available <- available_model_covariates()
+      stored <- if (is.null(report())) character() else {
+        report()$parameters$model_covariates %||% character()
+      }
+      shiny::selectizeInput(
+        session$ns("model_covariates"),
+        "Adjustment covariates",
+        choices = stats::setNames(available$token, available$label),
+        selected = intersect(stored, available$token),
+        multiple = TRUE,
+        options = list(
+          placeholder = "None — fit an unadjusted contrast model",
+          plugins = list("remove_button")
+        )
+      )
+    })
+
+    output$model_formula_preview <- shiny::renderUI({
+      if (!isTRUE(input$fit_categorical_models) ||
+          length(input$categorical_variables %||% character()) == 0L) {
+        return(NULL)
+      }
+      available <- available_model_covariates()
+      selected <- input$model_covariates %||% character()
+      labels <- available$label[match(selected, available$token)]
+      labels <- labels[!is.na(labels)]
+      formula <- paste(
+        "module eigengene ~ binary contrast",
+        if (length(labels) > 0L) {
+          paste("+", paste(labels, collapse = " + "))
+        } else {
+          ""
+        }
+      )
+      shiny::div(
+        class = "selection-guidance module-model-formula",
+        shiny::icon("calculator"),
+        shiny::span(
+          shiny::strong("Model: "),
+          formula,
+          shiny::br(),
+          "Each contrast is fitted separately. Reported q-values use BH adjustment across all module–contrast tests within each network."
+        )
+      )
+    })
+
     shiny::observeEvent(
       list(
         input$network_types,
         input$continuous_traits,
-        input$categorical_variables
+        input$categorical_variables,
+        input$model_covariates,
+        input$fit_categorical_models
       ),
       run_error(NULL),
       ignoreInit = TRUE
@@ -444,6 +531,11 @@ moduleTraitServer <- function(id, selected_session, on_complete = NULL) {
             selected_contrasts = contrasts,
             network_types = networks,
             continuous_method = input$continuous_method,
+            fit_categorical_models = isTRUE(input$fit_categorical_models),
+            model_covariates = intersect(
+              input$model_covariates %||% character(),
+              available_model_covariates()$token
+            ),
             create_plots = TRUE,
             save_artifacts = TRUE,
             verbose = FALSE
@@ -494,8 +586,43 @@ moduleTraitServer <- function(id, selected_session, on_complete = NULL) {
     }
     output$hc_continuous_plot <- module_trait_plot("hc", "continuous")
     output$hc_categorical_plot <- module_trait_plot("hc", "categorical")
+    output$hc_categorical_model_plot <- module_trait_plot("hc", "categorical_model")
     output$kmeans_continuous_plot <- module_trait_plot("kmeans", "continuous")
     output$kmeans_categorical_plot <- module_trait_plot("kmeans", "categorical")
+    output$kmeans_categorical_model_plot <- module_trait_plot(
+      "kmeans", "categorical_model"
+    )
+
+    adjusted_model_table <- shiny::reactive({
+      current <- report()
+      if (is.null(current)) return(NULL)
+      tables <- lapply(names(current$results), function(network) {
+        model <- current$results[[network]]$categorical_model
+        if (is.null(model)) return(NULL)
+        data.frame(
+          network = network,
+          model$table,
+          check.names = FALSE,
+          stringsAsFactors = FALSE
+        )
+      })
+      tables <- Filter(Negate(is.null), tables)
+      if (length(tables) == 0L) NULL else do.call(rbind, tables)
+    })
+
+    output$adjusted_model_table <- shiny::renderTable({
+      table <- adjusted_model_table()
+      shiny::req(table)
+      columns <- intersect(
+        c(
+          "network", "module", "contrast", "estimate", "std_error",
+          "conf_low", "conf_high", "p_value", "fdr", "n",
+          "adjusted_r_squared", "omitted_covariates", "aliased_terms", "status"
+        ),
+        names(table)
+      )
+      utils::head(table[, columns, drop = FALSE], 250L)
+    }, digits = 4, striped = TRUE, hover = TRUE, spacing = "s")
 
     output$results_panel <- shiny::renderUI({
       current <- report()
@@ -511,15 +638,16 @@ moduleTraitServer <- function(id, selected_session, on_complete = NULL) {
       }
       panels <- list()
       for (network in names(current$results)) {
-        for (analysis in c("continuous", "categorical")) {
+        for (analysis in c("continuous", "categorical", "categorical_model")) {
           if (is.null(current$results[[network]][[analysis]])) next
           output_id <- paste(network, analysis, "plot", sep = "_")
           network_label <- if (identical(network, "hc")) "HC" else "K-means"
-          analysis_label <- if (identical(analysis, "continuous")) {
-            "continuous"
-          } else {
-            "categorical"
-          }
+          analysis_label <- switch(
+            analysis,
+            continuous = "continuous correlation",
+            categorical = "categorical correlation",
+            categorical_model = "categorical linear model"
+          )
           panels[[length(panels) + 1L]] <- bslib::nav_panel(
             paste(network_label, analysis_label, sep = " · "),
             shiny::plotOutput(session$ns(output_id), height = "620px")
@@ -557,6 +685,26 @@ moduleTraitServer <- function(id, selected_session, on_complete = NULL) {
           metric(current$contrasts, "categorical contrasts")
         ),
         plots,
+        if (!is.null(adjusted_model_table())) {
+          bslib::card(
+            class = "module-model-table-card",
+            bslib::card_header("Categorical linear-model estimates"),
+            shiny::p(
+              class = "field-help",
+              "The coefficient is the model-estimated eigengene difference for contrast 1 minus contrast 0, adjusted when covariates are selected. The table preview is limited to 250 rows."
+            ),
+            shiny::div(
+              class = "threshold-table-wrap module-model-table-wrap",
+              shiny::tableOutput(session$ns("adjusted_model_table"))
+            ),
+            bslib::card_footer(
+              shiny::downloadButton(
+                session$ns("download_adjusted_models"),
+                "Download complete model table"
+              )
+            )
+          )
+        },
         if (!is.null(current$files$binary_contrasts)) {
           shiny::div(
             class = "plot-downloads",
@@ -574,6 +722,25 @@ moduleTraitServer <- function(id, selected_session, on_complete = NULL) {
         source <- report()$files$binary_contrasts
         shiny::req(source, file.exists(source))
         file.copy(source, file, overwrite = TRUE)
+      }
+    )
+
+    output$download_adjusted_models <- shiny::downloadHandler(
+      filename = function() "4_adjusted_categorical_models.tsv",
+      content = function(file) {
+        source <- report()$files$adjusted_models
+        if (!is.null(source) && file.exists(source)) {
+          file.copy(source, file, overwrite = TRUE)
+        } else {
+          utils::write.table(
+            adjusted_model_table(),
+            file,
+            sep = "\t",
+            quote = FALSE,
+            row.names = FALSE,
+            na = "NA"
+          )
+        }
       }
     )
 

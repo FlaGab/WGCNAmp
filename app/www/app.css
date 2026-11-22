@@ -609,6 +609,18 @@ h6 {
   color: var(--waiting);
 }
 
+.module-model-formula {
+  margin-top: 0.65rem;
+}
+
+.module-model-table-card {
+  margin-top: 1rem;
+}
+
+.module-model-table-wrap {
+  max-height: 560px;
+}
+
 .module-trait-empty-note {
   margin-bottom: 0.75rem;
 }

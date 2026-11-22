@@ -43,7 +43,9 @@ The current milestone provides:
   diagnostics, and standardized network artifacts;
 - dynamic module–trait controls populated from each session's traits, metadata,
   and available networks, including reference-level selection, automatic
-  single-level exclusion, contrast previews, correlation tables, and heatmaps;
+  single-level exclusion, contrast previews, correlation tables, heatmaps, and
+  covariate-adjusted categorical linear models with confidence intervals and
+  within-network FDR correction;
 - WGCNA hub-gene ranking with dynamic network, module, threshold, and optional
   gene-significance controls, using either scalable adjacency connectivity or
   notebook-compatible stored TOM connectivity;

@@ -23,7 +23,7 @@ stage_definitions <- function() {
       "Import counts and metadata, inspect quality, filter genes, and normalize expression.",
       "Estimate and select the soft-thresholding power.",
       "Build the WGCNA network and inspect detected modules.",
-      "Generate categorical contrasts and relate module eigengenes to traits.",
+      "Relate eigengenes to traits with correlations and covariate-adjusted models.",
       "Calculate module membership and adjacency- or TOM-based candidate hub genes.",
       "Run GO and KEGG enrichment for selected modules.",
       "Explore normalized expression for selected genes and modules."
