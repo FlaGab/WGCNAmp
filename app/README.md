@@ -49,7 +49,12 @@ The current milestone provides:
 - local Arabidopsis GO enrichment with selectable modules, ontology, cutoffs,
   redundancy reduction, result tables, and plots;
 - dynamic normalized-expression, module-summary, and eigengene visualizations
-  with selectable genes and sample grouping.
+  with selectable genes and sample grouping;
+- versioned persistent session state that restores the last open stage and
+  records each run's parameters, selected source files, upstream artifacts,
+  and outputs;
+- stale-step detection that propagates upstream input or artifact changes to
+  dependent stages while preserving their existing results for inspection.
 
 The GUI currently executes all seven steps. Existing notebooks remain available
 and continue to use the same pipeline artifacts.

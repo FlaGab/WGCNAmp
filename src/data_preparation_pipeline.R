@@ -285,6 +285,27 @@ run_data_preparation <- function(session_dir,
 
   result <- list(
     data = data,
+    parameters = list(
+      input_files = list(
+        counts = normalizePath(counts_file, mustWork = TRUE),
+        metadata = normalizePath(metadata_file, mustWork = TRUE),
+        traits = if (is.null(traits_file)) NULL else {
+          normalizePath(traits_file, mustWork = TRUE)
+        }
+      ),
+      gene_length_column = gene_length_column,
+      excluded_samples = unique(excluded_samples),
+      filtering_method = filtering_method,
+      n = n,
+      m = m,
+      p = p,
+      counts_sep = counts_sep,
+      metadata_sep = metadata_sep,
+      metadata_sample_id = metadata_sample_id,
+      traits_sep = traits_sep,
+      traits_sample_id = traits_sample_id,
+      qc_color_column = qc_color_column
+    ),
     qc = list(
       good_samples_genes = gsg,
       clustering = hc_tree,

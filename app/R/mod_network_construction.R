@@ -162,9 +162,7 @@ networkConstructionServer <- function(id,
 
     prerequisites_ready <- shiny::reactive({
       path <- selected_path()
-      !is.null(path) &&
-        file.exists(file.path(path, "out", "1_prepared_data.RData")) &&
-        file.exists(file.path(path, "out", "2_pt.Rdata"))
+      !is.null(path) && stage_dependencies_ready(path, "step3")
     })
 
     task_state <- shiny::reactive({
@@ -211,15 +209,13 @@ networkConstructionServer <- function(id,
 
     output$stage_badge <- shiny::renderUI({
       report()
+      path <- selected_path()
+      if (is.null(path)) return(status_badge("blocked"))
       state <- task_state()
-      if (!prerequisites_ready()) {
-        return(status_badge("blocked"))
-      }
       if (!is.null(state) && identical(state$status, "running")) {
         return(shiny::span(class = "status-badge status-running", "Running"))
       }
-      complete <- file.exists(file.path(selected_path(), "out", "3_networks.rds"))
-      status_badge(if (complete) "complete" else "ready")
+      session_stage_badge(path, "step3")
     })
 
     output$prerequisite_notice <- shiny::renderUI({
@@ -399,7 +395,7 @@ networkConstructionServer <- function(id,
           )
         }
         if (is.function(on_complete)) {
-          on_complete()
+          on_complete(value, job$path)
         }
       } else if (identical(status, "error")) {
         message <- tryCatch(

@@ -207,6 +207,24 @@ h6 {
   font-size: 0.8rem;
 }
 
+.stale-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin: -0.35rem 0 1.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #fecdca;
+  border-radius: 0.8rem;
+  background: #fff6f5;
+  color: #b42318;
+}
+
+.stale-summary p {
+  margin: 0.2rem 0 0;
+  color: #7a271a;
+  font-size: 0.88rem;
+}
+
 .card {
   border-color: var(--line);
   border-radius: 1rem;
@@ -260,6 +278,11 @@ h6 {
 .status-running {
   background: #e9e7fd;
   color: #5145cd;
+}
+
+.status-stale {
+  background: #fff1f0;
+  color: #b42318;
 }
 
 .stage-description {

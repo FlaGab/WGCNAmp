@@ -165,6 +165,10 @@ separator_value <- function(value) {
   switch(value, comma = ",", semicolon = ";", tab = "\t", ",")
 }
 
+separator_key <- function(value) {
+  switch(value, `;` = "semicolon", `\t` = "tab", comma = "comma", "," = "comma", "comma")
+}
+
 detect_separator_key <- function(path, fallback = "comma") {
   if (is.null(path) || !file.exists(path)) {
     return(fallback)
@@ -353,7 +357,52 @@ dataPreparationServer <- function(id, selected_session, on_complete = NULL) {
       report(load_preparation_report(selected_path()))
       run_error(NULL)
       run_completed(FALSE)
-      refresh_file_choices()
+      saved <- saved_stage_parameters(selected_path(), "step1")
+      saved_files <- if (is.null(saved$input_files)) list() else {
+        lapply(saved$input_files, function(path) {
+          if (is.null(path) || !nzchar(path)) "" else basename(path)
+        })
+      }
+      refresh_file_choices(saved_files)
+      if (!is.null(saved)) {
+        shiny::updateSelectInput(
+          session, "counts_sep", selected = separator_key(saved$counts_sep)
+        )
+        shiny::updateSelectInput(
+          session, "metadata_sep", selected = separator_key(saved$metadata_sep)
+        )
+        shiny::updateSelectInput(
+          session, "traits_sep", selected = separator_key(saved$traits_sep)
+        )
+        shiny::updateTextInput(
+          session, "metadata_sample_id", value = saved$metadata_sample_id
+        )
+        shiny::updateTextInput(
+          session, "traits_sample_id", value = saved$traits_sample_id
+        )
+        shiny::updateSelectInput(
+          session, "filtering_method", selected = saved$filtering_method
+        )
+        shiny::updateNumericInput(
+          session, "read_threshold", value = saved$n
+        )
+        shiny::updateSelectizeInput(
+          session,
+          "gene_length_column",
+          selected = saved$gene_length_column %||% "",
+          server = TRUE
+        )
+        shiny::updateSelectizeInput(
+          session,
+          "excluded_samples",
+          selected = saved$excluded_samples,
+          server = TRUE
+        )
+        qc_columns <- saved$qc_color_columns %||% saved$qc_color_column %||% character()
+        shiny::updateSelectizeInput(
+          session, "qc_color_columns", selected = qc_columns, server = TRUE
+        )
+      }
     }, ignoreNULL = TRUE)
 
     observe_upload <- function(input_id, target) {
@@ -479,11 +528,14 @@ dataPreparationServer <- function(id, selected_session, on_complete = NULL) {
     )
 
     output$method_parameter <- shiny::renderUI({
+      saved <- if (is.null(selected_path())) NULL else {
+        saved_stage_parameters(selected_path(), "step1")
+      }
       if (identical(input$filtering_method, "2")) {
         shiny::numericInput(
           session$ns("minimum_samples"),
           "Minimum number of samples",
-          value = 3,
+          value = saved$m %||% 3,
           min = 1,
           step = 1
         )
@@ -493,7 +545,7 @@ dataPreparationServer <- function(id, selected_session, on_complete = NULL) {
           "Minimum proportion of samples",
           min = 0.05,
           max = 1,
-          value = 0.75,
+          value = saved$p %||% 0.75,
           step = 0.05
         )
       }
@@ -537,9 +589,9 @@ dataPreparationServer <- function(id, selected_session, on_complete = NULL) {
 
     output$stage_badge <- shiny::renderUI({
       report()
-      complete <- !is.null(selected_path()) &&
-        file.exists(file.path(selected_path(), "out", "1_prepared_data.RData"))
-      status_badge(if (complete) "complete" else "ready")
+      path <- selected_path()
+      if (is.null(path)) return(status_badge("blocked"))
+      session_stage_badge(path, "step1")
     })
 
     shiny::observeEvent(input$run, {
@@ -630,10 +682,11 @@ dataPreparationServer <- function(id, selected_session, on_complete = NULL) {
             value
           }
         )
+        result$parameters$qc_color_columns <- qc_columns
         report(load_preparation_report(selected_path()))
         run_completed(TRUE)
         if (is.function(on_complete)) {
-          on_complete()
+          on_complete(result, selected_path())
         }
         shiny::showNotification(
           "Data preparation completed successfully.",

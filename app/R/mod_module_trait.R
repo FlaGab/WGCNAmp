@@ -113,9 +113,7 @@ moduleTraitServer <- function(id, selected_session, on_complete = NULL) {
 
     prerequisites_ready <- shiny::reactive({
       path <- selected_path()
-      !is.null(path) &&
-        file.exists(file.path(path, "out", "1_prepared_data.RData")) &&
-        !is.null(module_trait_network_artifact(path))
+      !is.null(path) && stage_dependencies_ready(path, "step4")
     })
 
     shiny::observeEvent(selected_path(), {
@@ -218,9 +216,9 @@ moduleTraitServer <- function(id, selected_session, on_complete = NULL) {
 
     output$stage_badge <- shiny::renderUI({
       report()
-      if (!prerequisites_ready()) return(status_badge("blocked"))
-      complete <- stage_is_complete("step4", selected_path())
-      status_badge(if (complete) "complete" else "ready")
+      path <- selected_path()
+      if (is.null(path)) return(status_badge("blocked"))
+      session_stage_badge(path, "step4")
     })
 
     output$prerequisite_notice <- shiny::renderUI({
@@ -453,7 +451,7 @@ moduleTraitServer <- function(id, selected_session, on_complete = NULL) {
           shiny::incProgress(0.8, detail = "Saving tables and heatmaps")
         })
         report(result)
-        if (is.function(on_complete)) on_complete()
+        if (is.function(on_complete)) on_complete(result, selected_path())
         shiny::showNotification(
           "Module–trait analysis completed.", type = "message"
         )

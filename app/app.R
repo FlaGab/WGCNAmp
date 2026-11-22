@@ -98,44 +98,57 @@ server <- function(input, output, session) {
   selector <- sessionSelectorServer("session_selector", project_root)
   pipeline_revision <- shiny::reactiveVal(0L)
 
+  stage_completed <- function(stage_id) {
+    function(result = NULL, session_path = NULL) {
+      path <- session_path
+      if (is.null(path)) {
+        selected <- shiny::isolate(selector$selected())
+        path <- if (is.null(selected)) NULL else selected$path
+      }
+      if (!is.null(path)) record_stage_completion(path, stage_id, result)
+      pipeline_revision(shiny::isolate(pipeline_revision()) + 1L)
+    }
+  }
+
   dataPreparationServer(
     "data_preparation",
     selected_session = selector$selected,
-    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+    on_complete = stage_completed("step1")
   )
   softThresholdServer(
     "soft_threshold",
     selected_session = selector$selected,
-    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+    on_complete = stage_completed("step2")
   )
   networkConstructionServer(
     "network_construction",
     selected_session = selector$selected,
     project_root = project_root,
-    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+    on_complete = stage_completed("step3")
   )
   moduleTraitServer(
     "module_trait",
     selected_session = selector$selected,
-    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+    on_complete = stage_completed("step4")
   )
   hubAnalysisServer(
     "hub_analysis",
     selected_session = selector$selected,
-    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+    on_complete = stage_completed("step5")
   )
   enrichmentServer(
     "enrichment",
     selected_session = selector$selected,
-    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+    on_complete = stage_completed("step6")
   )
   geneVisualizationServer(
     "gene_visualization",
     selected_session = selector$selected,
-    on_complete = function() pipeline_revision(pipeline_revision() + 1L)
+    on_complete = stage_completed("step7")
   )
 
   stage_table <- shiny::reactive({
+    shiny::invalidateLater(3000, session)
     selected <- selector$selected()
     selector$revision()
     pipeline_revision()
@@ -146,18 +159,31 @@ server <- function(input, output, session) {
   })
 
   shiny::observeEvent(selector$selected(), {
+    selected_session <- selector$selected()
     stages <- stage_table()
-    if (is.null(stages)) {
+    if (is.null(stages) || is.null(selected_session)) {
       return()
     }
+    saved_stage <- read_session_state(
+      selected_session$path, migrate = TRUE
+    )$ui$active_stage
     incomplete <- which(stages$status != "complete")
-    next_stage <- if (length(incomplete) > 0L) {
+    next_stage <- if (!is.null(saved_stage) && saved_stage %in% stages$id) {
+      saved_stage
+    } else if (length(incomplete) > 0L) {
       stages$id[[incomplete[[1L]]]]
     } else {
       stages$id[[nrow(stages)]]
     }
     shiny::updateRadioButtons(session, "active_stage", selected = next_stage)
   }, ignoreNULL = TRUE)
+
+  shiny::observeEvent(input$active_stage, {
+    selected <- shiny::isolate(selector$selected())
+    if (!is.null(selected) && input$active_stage %in% stage_definitions()$id) {
+      update_session_ui_state(selected$path, active_stage = input$active_stage)
+    }
+  }, ignoreInit = TRUE)
 
   output$stage_navigation <- shiny::renderUI({
     stages <- stage_table()
@@ -207,18 +233,42 @@ server <- function(input, output, session) {
     }
 
     completed <- sum(stages$status == "complete")
-    shiny::div(
-      class = "session-header",
+    stale <- sum(stages$status == "stale")
+    stale_stages <- stages[stages$status == "stale", , drop = FALSE]
+    shiny::tagList(
       shiny::div(
-        shiny::div(class = "eyebrow", "Current analysis"),
-        shiny::h1(selected$name),
-        shiny::p(class = "session-path", selected$path)
+        class = "session-header",
+        shiny::div(
+          shiny::div(class = "eyebrow", "Current analysis"),
+          shiny::h1(selected$name),
+          shiny::p(class = "session-path", selected$path)
+        ),
+        shiny::div(
+          class = "progress-summary",
+          shiny::strong(paste0(completed, " / ", nrow(stages))),
+          shiny::span(
+            if (stale > 0L) {
+              paste("stages complete ·", stale, "stale")
+            } else {
+              "stages complete"
+            }
+          )
+        )
       ),
-      shiny::div(
-        class = "progress-summary",
-        shiny::strong(paste0(completed, " / ", nrow(stages))),
-        shiny::span("stages complete")
-      )
+      if (stale > 0L) {
+        shiny::div(
+          class = "stale-summary",
+          shiny::icon("triangle-exclamation"),
+          shiny::div(
+            shiny::strong("Some results need to be rerun"),
+            shiny::p(
+              paste(stale_stages$label, collapse = ", "),
+              shiny::br(),
+              stale_stages$stale_reason[[1L]]
+            )
+          )
+        )
+      }
     )
   })
 

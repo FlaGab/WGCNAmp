@@ -110,8 +110,7 @@ hubAnalysisServer <- function(id, selected_session, on_complete = NULL) {
     })
     ready <- shiny::reactive({
       path <- selected_path()
-      !is.null(path) && file.exists(file.path(path, "out", "1_prepared_data.RData")) &&
-        !is.null(module_trait_network_artifact(path))
+      !is.null(path) && stage_dependencies_ready(path, "step5")
     })
     shiny::observeEvent(selected_path(), {
       report(load_hub_report(selected_path()))
@@ -129,8 +128,9 @@ hubAnalysisServer <- function(id, selected_session, on_complete = NULL) {
 
     output$stage_badge <- shiny::renderUI({
       report()
-      if (!ready()) return(status_badge("blocked"))
-      status_badge(if (stage_is_complete("step5", selected_path())) "complete" else "ready")
+      path <- selected_path()
+      if (is.null(path)) return(status_badge("blocked"))
+      session_stage_badge(path, "step5")
     })
     output$prerequisite_notice <- shiny::renderUI({
       if (ready()) return(NULL)
@@ -215,7 +215,7 @@ hubAnalysisServer <- function(id, selected_session, on_complete = NULL) {
           }
         )
         report(result)
-        if (is.function(on_complete)) on_complete()
+        if (is.function(on_complete)) on_complete(result, selected_path())
       }, error = function(error) {
         run_error(conditionMessage(error))
         shiny::showNotification(conditionMessage(error), type = "error", duration = NULL)
@@ -334,8 +334,7 @@ enrichmentServer <- function(id, selected_session, on_complete = NULL) {
     })
     ready <- shiny::reactive({
       path <- selected_path()
-      !is.null(path) && file.exists(file.path(path, "out", "1_prepared_data.RData")) &&
-        !is.null(module_trait_network_artifact(path))
+      !is.null(path) && stage_dependencies_ready(path, "step6")
     })
     missing_packages <- shiny::reactive({
       packages <- c("clusterProfiler", "org.At.tair.db", "GO.db")
@@ -351,8 +350,9 @@ enrichmentServer <- function(id, selected_session, on_complete = NULL) {
     }, ignoreNULL = TRUE)
     output$stage_badge <- shiny::renderUI({
       report()
-      if (!ready()) return(status_badge("blocked"))
-      status_badge(if (stage_is_complete("step6", selected_path())) "complete" else "ready")
+      path <- selected_path()
+      if (is.null(path)) return(status_badge("blocked"))
+      session_stage_badge(path, "step6")
     })
     output$prerequisite_notice <- shiny::renderUI({
       if (ready()) return(NULL)
@@ -422,7 +422,7 @@ enrichmentServer <- function(id, selected_session, on_complete = NULL) {
           value
         })
         report(result)
-        if (is.function(on_complete)) on_complete()
+        if (is.function(on_complete)) on_complete(result, selected_path())
       }, error = function(error) {
         run_error(conditionMessage(error))
         shiny::showNotification(conditionMessage(error), type = "error", duration = NULL)
@@ -521,8 +521,7 @@ geneVisualizationServer <- function(id, selected_session, on_complete = NULL) {
     })
     ready <- shiny::reactive({
       path <- selected_path()
-      !is.null(path) && file.exists(file.path(path, "out", "1_prepared_data.RData")) &&
-        !is.null(module_trait_network_artifact(path))
+      !is.null(path) && stage_dependencies_ready(path, "step7")
     })
     shiny::observeEvent(selected_path(), {
       report(load_visualization_report(selected_path()))
@@ -531,8 +530,9 @@ geneVisualizationServer <- function(id, selected_session, on_complete = NULL) {
     }, ignoreNULL = TRUE)
     output$stage_badge <- shiny::renderUI({
       report()
-      if (!ready()) return(status_badge("blocked"))
-      status_badge(if (stage_is_complete("step7", selected_path())) "complete" else "ready")
+      path <- selected_path()
+      if (is.null(path)) return(status_badge("blocked"))
+      session_stage_badge(path, "step7")
     })
     output$prerequisite_notice <- shiny::renderUI({
       if (ready()) return(NULL)
@@ -628,7 +628,7 @@ geneVisualizationServer <- function(id, selected_session, on_complete = NULL) {
           verbose = FALSE
         )
         report(result)
-        if (is.function(on_complete)) on_complete()
+        if (is.function(on_complete)) on_complete(result, selected_path())
       }, error = function(error) {
         run_error(conditionMessage(error))
         shiny::showNotification(conditionMessage(error), type = "error", duration = NULL)
