@@ -12,6 +12,23 @@ downstream_network_labels <- function() {
   c(hc = "Hierarchical clustering", kmeans = "K-means refinement")
 }
 
+metadata_annotation_spec <- function(metadata) {
+  if (is.null(metadata) || !is.data.frame(metadata)) {
+    return(list(columns = character(), defaults = character()))
+  }
+  supported <- names(metadata)[vapply(metadata, function(column) {
+    is.atomic(column) && !is.list(column)
+  }, logical(1))]
+  informative <- supported[vapply(metadata[supported], function(column) {
+    values <- column[!is.na(column)]
+    length(unique(values)) >= 2L
+  }, logical(1))]
+  defaults <- informative[vapply(metadata[informative], function(column) {
+    is.numeric(column) || length(unique(column[!is.na(column)])) <= 20L
+  }, logical(1))]
+  list(columns = supported, defaults = utils::head(defaults, 6L))
+}
+
 network_gene_colors <- function(network, expression_genes) {
   colors <- network$colors
   if (is.null(colors) || length(colors) != length(expression_genes)) {
@@ -53,6 +70,7 @@ downstream_control_spec <- function(session_dir) {
   metadata_columns <- if (is.null(data$metadata)) character() else {
     names(data$metadata)
   }
+  annotation_spec <- metadata_annotation_spec(data$metadata)
   list(
     samples = nrow(expression),
     genes = ncol(expression),
@@ -61,6 +79,8 @@ downstream_control_spec <- function(session_dir) {
     colors = colors,
     continuous_traits = continuous_traits,
     metadata_columns = metadata_columns,
+    annotation_columns = annotation_spec$columns,
+    default_annotation_columns = annotation_spec$defaults,
     normalized_counts_available = !is.null(data$normalized_counts),
     tom = network_tom_summary(inputs$network_result, session_dir)
   )
@@ -1084,13 +1104,108 @@ expression_long_table <- function(matrix) {
   )
 }
 
+visualization_sample_labels <- function(metadata,
+                                        sample_order,
+                                        columns = character()) {
+  columns <- as.character(columns %||downstream% character())
+  unknown <- setdiff(columns, names(metadata))
+  if (length(unknown) > 0L) {
+    stop("Unknown sample-label metadata columns: ", paste(unknown, collapse = ", "), call. = FALSE)
+  }
+  if (length(columns) == 0L) {
+    return(stats::setNames(sample_order, sample_order))
+  }
+  label_data <- metadata[sample_order, columns, drop = FALSE]
+  label_data[] <- lapply(label_data, function(column) {
+    values <- as.character(column)
+    values[is.na(values) | !nzchar(values)] <- "NA"
+    values
+  })
+  labels <- apply(label_data, 1L, paste, collapse = "_")
+  stats::setNames(make.unique(unname(labels), sep = "_"), sample_order)
+}
+
+visualization_annotation_data <- function(metadata,
+                                          sample_order,
+                                          columns = character()) {
+  columns <- as.character(columns %||downstream% character())
+  unknown <- setdiff(columns, names(metadata))
+  if (length(unknown) > 0L) {
+    stop("Unknown heatmap annotation columns: ", paste(unknown, collapse = ", "), call. = FALSE)
+  }
+  if (length(columns) == 0L) return(NULL)
+  annotation <- metadata[sample_order, columns, drop = FALSE]
+  annotation[] <- lapply(annotation, function(column) {
+    if (is.numeric(column) || is.factor(column)) column else factor(as.character(column))
+  })
+  annotation
+}
+
+select_module_trajectory_genes <- function(counts,
+                                           colors,
+                                           network,
+                                           modules,
+                                           sample_order,
+                                           max_genes_per_module = 0L) {
+  max_genes_per_module <- as.integer(max_genes_per_module)
+  if (is.na(max_genes_per_module) || max_genes_per_module < 0L) {
+    stop("Maximum trajectory genes per module must be zero or a positive integer.", call. = FALSE)
+  }
+  selected <- lapply(modules, function(module) {
+    genes <- names(colors)[colors == module]
+    if (max_genes_per_module == 0L || length(genes) <= max_genes_per_module) return(genes)
+    eigengene_column <- paste0("ME", module)
+    if (!eigengene_column %in% colnames(network$MEs)) {
+      stop("Module eigengene is missing for module '", module, "'.", call. = FALSE)
+    }
+    scores <- suppressWarnings(stats::cor(
+      t(counts[genes, sample_order, drop = FALSE]),
+      network$MEs[sample_order, eigengene_column],
+      use = "pairwise.complete.obs"
+    )[, 1L])
+    scores[!is.finite(scores)] <- 0
+    genes[utils::head(order(abs(scores), decreasing = TRUE), max_genes_per_module)]
+  })
+  unique(unlist(selected, use.names = FALSE))
+}
+
+draw_visualization_plot <- function(plot) {
+  if (inherits(plot, "pheatmap")) {
+    grid::grid.newpage()
+    grid::grid.draw(plot$gtable)
+  } else {
+    print(plot)
+  }
+  invisible(plot)
+}
+
+save_visualization_plot <- function(plot, path, width, height) {
+  if (inherits(plot, "pheatmap")) {
+    grDevices::pdf(path, width = width, height = height, onefile = TRUE)
+    on.exit(grDevices::dev.off(), add = TRUE)
+    draw_visualization_plot(plot)
+  } else {
+    ggplot2::ggsave(
+      path, plot, width = width, height = height,
+      bg = "white", limitsize = FALSE
+    )
+  }
+  invisible(path)
+}
+
 run_gene_visualization <- function(session_dir,
                                    network_type = "hc",
                                    modules,
                                    genes = character(),
-                                   plot_type = c("gene_profiles", "module_summary", "eigengene_heatmap"),
+                                   plot_type = c(
+                                     "gene_profiles", "module_trajectories",
+                                     "module_summary", "eigengene_heatmap"
+                                   ),
                                    group_column = NULL,
                                    scale_rows = TRUE,
+                                   annotation_columns = NULL,
+                                   sample_label_columns = character(),
+                                   trajectory_max_genes_per_module = 0L,
                                    create_plot = TRUE,
                                    save_artifacts = TRUE,
                                    verbose = TRUE) {
@@ -1118,14 +1233,18 @@ run_gene_visualization <- function(session_dir,
     stop("Unknown modules: ", paste(unknown_modules, collapse = ", "), call. = FALSE)
   }
   module_genes <- names(colors)[colors %in% modules]
-  if (length(genes) == 0L) genes <- utils::head(module_genes, 12L)
-  unknown_genes <- setdiff(genes, module_genes)
-  if (length(unknown_genes) > 0L) {
-    stop("Selected genes are not in the selected modules: ",
-         paste(utils::head(unknown_genes, 10L), collapse = ", "), call. = FALSE)
-  }
-  if (length(genes) > 100L) {
-    stop("Select at most 100 genes for one visualization.", call. = FALSE)
+  if (identical(plot_type, "gene_profiles")) {
+    if (length(genes) == 0L) genes <- utils::head(module_genes, 12L)
+    unknown_genes <- setdiff(genes, module_genes)
+    if (length(unknown_genes) > 0L) {
+      stop("Selected genes are not in the selected modules: ",
+           paste(utils::head(unknown_genes, 10L), collapse = ", "), call. = FALSE)
+    }
+    if (length(genes) > 100L) {
+      stop("Select at most 100 genes for one visualization.", call. = FALSE)
+    }
+  } else {
+    genes <- character()
   }
   if (!is.null(group_column) && nzchar(group_column) &&
       !group_column %in% names(metadata)) {
@@ -1133,31 +1252,80 @@ run_gene_visualization <- function(session_dir,
   }
   group_column <- if (is.null(group_column) || !nzchar(group_column)) NULL else group_column
   sample_order <- rownames(metadata)
+  if (is.null(rownames(network$MEs)) || !setequal(rownames(network$MEs), sample_order)) {
+    stop("Network eigengenes and metadata contain different samples.", call. = FALSE)
+  }
+  sample_labels <- visualization_sample_labels(
+    metadata, sample_order, sample_label_columns
+  )
 
   if (identical(plot_type, "eigengene_heatmap")) {
-    eigengene_columns <- intersect(paste0("ME", modules), colnames(network$MEs))
+    if (!suppressPackageStartupMessages(requireNamespace("pheatmap", quietly = TRUE))) {
+      stop("Install the 'pheatmap' package to create annotated eigengene heatmaps.", call. = FALSE)
+    }
+    eigengene_columns <- paste0("ME", modules)
+    missing_eigengenes <- setdiff(eigengene_columns, colnames(network$MEs))
+    if (length(missing_eigengenes) > 0L) {
+      stop("Missing module eigengenes: ", paste(missing_eigengenes, collapse = ", "), call. = FALSE)
+    }
+    if (is.null(annotation_columns)) {
+      annotation_columns <- metadata_annotation_spec(metadata)$defaults
+    }
+    annotation <- visualization_annotation_data(
+      metadata, sample_order, annotation_columns
+    )
     values <- t(as.matrix(network$MEs[sample_order, eigengene_columns, drop = FALSE]))
     result_table <- data.frame(
       module = rep(sub("^ME", "", rownames(values)), each = ncol(values)),
       sample = rep(colnames(values), times = nrow(values)),
+      sample_label = rep(unname(sample_labels[colnames(values)]), times = nrow(values)),
       value = as.vector(t(values)),
       stringsAsFactors = FALSE
     )
-    result_table$sample <- factor(result_table$sample, levels = sample_order)
+    for (column in annotation_columns) {
+      result_table[[column]] <- rep(metadata[sample_order, column], times = nrow(values))
+    }
+    heatmap_arguments <- list(
+      mat = values,
+      cluster_cols = FALSE,
+      cluster_rows = TRUE,
+      labels_col = unname(sample_labels[colnames(values)]),
+      main = "Module eigengenes",
+      border_color = "white",
+      color = grDevices::colorRampPalette(c("#2563eb", "white", "#dc2626"))(101),
+      silent = TRUE
+    )
+    if (!is.null(annotation)) heatmap_arguments$annotation_col <- annotation
+    plot <- do.call(pheatmap::pheatmap, heatmap_arguments)
+  } else if (identical(plot_type, "module_trajectories")) {
+    trajectory_genes <- select_module_trajectory_genes(
+      counts, colors, network, modules, sample_order,
+      trajectory_max_genes_per_module
+    )
+    matrix <- counts[trajectory_genes, sample_order, drop = FALSE]
+    if (isTRUE(scale_rows)) matrix <- scale_expression_rows(matrix)
+    result_table <- expression_long_table(matrix)
+    result_table$module <- unname(colors[result_table$gene])
+    result_table$sample_label <- unname(sample_labels[result_table$sample])
+    result_table$sample_label <- factor(
+      result_table$sample_label,
+      levels = unname(sample_labels[sample_order])
+    )
     plot <- ggplot2::ggplot(
       result_table,
-      ggplot2::aes(x = sample, y = module, fill = value)
+      ggplot2::aes(x = sample_label, y = value, group = gene, color = module)
     ) +
-      ggplot2::geom_tile(color = "white", linewidth = 0.25) +
-      ggplot2::scale_fill_gradient2(
-        low = "#2563eb", mid = "white", high = "#dc2626", midpoint = 0,
-        name = "Eigengene"
+      ggplot2::geom_line(linewidth = 0.4, alpha = 0.55) +
+      ggplot2::scale_color_identity() +
+      ggplot2::facet_grid(rows = ggplot2::vars(module), scales = "free_y") +
+      ggplot2::labs(
+        title = "Individual-gene module trajectories", x = NULL,
+        y = if (isTRUE(scale_rows)) "Gene z-score" else "Normalized expression"
       ) +
-      ggplot2::labs(title = "Module eigengenes", x = NULL, y = NULL) +
-      ggplot2::theme_minimal(base_size = 11) +
+      ggplot2::theme_bw(base_size = 11) +
       ggplot2::theme(
-        panel.grid = ggplot2::element_blank(),
-        axis.text.x = ggplot2::element_text(angle = 60, hjust = 1)
+        axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5),
+        legend.position = "none"
       )
   } else if (identical(plot_type, "module_summary")) {
     module_matrices <- lapply(modules, function(module) {
@@ -1229,26 +1397,36 @@ run_gene_visualization <- function(session_dir,
   plots_dir <- file.path(session_dir, "plots")
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   dir.create(plots_dir, recursive = TRUE, showWarnings = FALSE)
-  files <- list(report = NULL, data = NULL, plot = NULL)
+  files <- list(
+    report = NULL, data = NULL, typed_data = NULL,
+    plot = NULL, typed_plot = NULL
+  )
   if (save_artifacts) {
     files$data <- file.path(output_dir, "7_visualization_data.tsv")
+    files$typed_data <- file.path(output_dir, paste0("7_", plot_type, "_data.tsv"))
     utils::write.table(
       result_table, files$data, sep = "\t", quote = FALSE, row.names = FALSE
     )
+    utils::write.table(
+      result_table, files$typed_data, sep = "\t", quote = FALSE, row.names = FALSE
+    )
     if (create_plot) {
       files$plot <- file.path(plots_dir, "7_gene_visualization.pdf")
-      ggplot2::ggsave(
-        files$plot,
-        plot,
-        width = 11,
-        height = if (identical(plot_type, "gene_profiles")) {
-          max(6, 2.8 * ceiling(length(genes) / 3))
-        } else {
-          max(6, 3 * ceiling(length(modules) / 3))
-        },
-        bg = "white",
-        limitsize = FALSE
-      )
+      files$typed_plot <- file.path(plots_dir, paste0("7_", plot_type, ".pdf"))
+      plot_width <- if (identical(plot_type, "eigengene_heatmap")) {
+        max(10, min(20, 4 + length(sample_order) * 0.22))
+      } else {
+        11
+      }
+      plot_height <- if (identical(plot_type, "gene_profiles")) {
+        max(6, 2.8 * ceiling(length(genes) / 3))
+      } else if (identical(plot_type, "module_trajectories")) {
+        max(6, 2.4 * length(modules))
+      } else {
+        max(6, 3 * ceiling(length(modules) / 3))
+      }
+      save_visualization_plot(plot, files$plot, plot_width, plot_height)
+      save_visualization_plot(plot, files$typed_plot, plot_width, plot_height)
     }
   }
   report <- list(
@@ -1258,7 +1436,10 @@ run_gene_visualization <- function(session_dir,
       genes = genes,
       plot_type = plot_type,
       group_column = group_column,
-      scale_rows = isTRUE(scale_rows)
+      scale_rows = isTRUE(scale_rows),
+      annotation_columns = annotation_columns %||downstream% character(),
+      sample_label_columns = sample_label_columns,
+      trajectory_max_genes_per_module = as.integer(trajectory_max_genes_per_module)
     ),
     rows = nrow(result_table),
     plot = plot,

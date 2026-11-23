@@ -26,7 +26,7 @@ stage_definitions <- function() {
       "Relate eigengenes to traits with correlations and covariate-adjusted models.",
       "Calculate candidate hub genes, visualize TOM connectivity, and export Cytoscape networks.",
       "Run GO and KEGG enrichment for selected modules.",
-      "Explore normalized expression for selected genes and modules."
+      "Explore gene trajectories, module summaries, and metadata-annotated eigengene heatmaps."
     ),
     notebook = c(
       "1_data_preparation.qmd",

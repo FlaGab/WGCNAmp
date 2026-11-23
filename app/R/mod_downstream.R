@@ -779,7 +779,7 @@ geneVisualizationUI <- function(id) {
     downstream_stage_heading(
       7,
       "Gene visualization",
-      "Explore normalized expression, module summaries, or eigengene patterns without editing gene lists in a notebook.",
+      "Explore individual-gene module trajectories, selected profiles, and metadata-annotated eigengene heatmaps.",
       ns
     ),
     shiny::uiOutput(ns("prerequisite_notice")),
@@ -794,14 +794,19 @@ geneVisualizationUI <- function(id) {
         shiny::selectInput(
           ns("plot_type"), "View",
           choices = c(
-            "Selected gene profiles" = "gene_profiles",
-            "Module expression summaries" = "module_summary",
-            "Module eigengene heatmap" = "eigengene_heatmap"
+            "Selected-gene profiles" = "gene_profiles",
+            "Individual-gene module trajectories" = "module_trajectories",
+            "Module mean trajectories" = "module_summary",
+            "Annotated module eigengene heatmap" = "eigengene_heatmap"
           )
         ),
+        shiny::uiOutput(ns("view_guidance")),
         shiny::uiOutput(ns("gene_selector")),
         shiny::uiOutput(ns("group_selector")),
-        shiny::checkboxInput(ns("scale_rows"), "Scale each gene to a z-score", TRUE)
+        shiny::uiOutput(ns("annotation_selector")),
+        shiny::uiOutput(ns("sample_label_selector")),
+        shiny::uiOutput(ns("trajectory_limit")),
+        shiny::uiOutput(ns("scale_control"))
       ),
       shiny::div(
         bslib::card(
@@ -836,9 +841,16 @@ geneVisualizationServer <- function(id, selected_session, on_complete = NULL) {
       !is.null(path) && stage_dependencies_ready(path, "step7")
     })
     shiny::observeEvent(selected_path(), {
-      report(load_visualization_report(selected_path()))
+      current_report <- load_visualization_report(selected_path())
+      report(current_report)
       run_error(NULL)
       spec(tryCatch(downstream_control_spec(selected_path()), error = function(error) NULL))
+      if (!is.null(current_report)) {
+        shiny::updateSelectInput(
+          session, "plot_type",
+          selected = current_report$parameters$plot_type %||% "gene_profiles"
+        )
+      }
     }, ignoreNULL = TRUE)
     output$stage_badge <- shiny::renderUI({
       report()
@@ -864,6 +876,7 @@ geneVisualizationServer <- function(id, selected_session, on_complete = NULL) {
       shiny::req(spec())
       input$network_type %||% names(spec()$networks)[[1L]]
     })
+    selected_view <- shiny::reactive(input$plot_type %||% "gene_profiles")
     output$module_selector <- shiny::renderUI({
       current <- spec()
       shiny::req(current)
@@ -883,7 +896,7 @@ geneVisualizationServer <- function(id, selected_session, on_complete = NULL) {
       names(colors)[colors %in% selected_modules()]
     })
     output$gene_selector <- shiny::renderUI({
-      if (!identical(input$plot_type %||% "gene_profiles", "gene_profiles")) return(NULL)
+      if (!identical(selected_view(), "gene_profiles")) return(NULL)
       genes <- available_genes()
       stored <- if (is.null(report())) character() else report()$parameters$genes
       selected <- intersect(stored, genes)
@@ -896,12 +909,98 @@ geneVisualizationServer <- function(id, selected_session, on_complete = NULL) {
     })
     output$group_selector <- shiny::renderUI({
       current <- spec()
-      if (is.null(current) || !identical(input$plot_type %||% "gene_profiles", "gene_profiles")) return(NULL)
+      if (is.null(current) || !identical(selected_view(), "gene_profiles")) return(NULL)
       stored <- if (is.null(report())) "" else report()$parameters$group_column %||% ""
       shiny::selectInput(
         session$ns("group_column"), "Color samples by",
         choices = c("No grouping" = "", current$metadata_columns), selected = stored
       )
+    })
+    output$annotation_selector <- shiny::renderUI({
+      current <- spec()
+      if (is.null(current) || !identical(selected_view(), "eigengene_heatmap")) return(NULL)
+      stored <- if (is.null(report())) NULL else report()$parameters$annotation_columns
+      selected <- if (is.null(stored)) {
+        current$default_annotation_columns
+      } else {
+        intersect(stored, current$annotation_columns)
+      }
+      shiny::checkboxGroupInput(
+        session$ns("annotation_columns"),
+        "Metadata annotations",
+        choices = current$annotation_columns,
+        selected = selected
+      )
+    })
+    output$sample_label_selector <- shiny::renderUI({
+      current <- spec()
+      if (is.null(current) || !identical(selected_view(), "module_trajectories")) return(NULL)
+      stored <- if (is.null(report())) character() else {
+        report()$parameters$sample_label_columns %||% character()
+      }
+      shiny::selectizeInput(
+        session$ns("sample_label_columns"),
+        "Build sample labels from metadata (optional)",
+        choices = current$metadata_columns,
+        selected = intersect(stored, current$metadata_columns),
+        multiple = TRUE,
+        options = list(plugins = list("remove_button"))
+      )
+    })
+    output$trajectory_limit <- shiny::renderUI({
+      if (!identical(selected_view(), "module_trajectories")) return(NULL)
+      stored <- if (is.null(report())) 0 else {
+        report()$parameters$trajectory_max_genes_per_module %||% 0
+      }
+      shiny::numericInput(
+        session$ns("trajectory_max_genes_per_module"),
+        "Maximum genes per module (0 uses every gene)",
+        value = stored, min = 0, step = 10
+      )
+    })
+    output$scale_control <- shiny::renderUI({
+      if (identical(selected_view(), "eigengene_heatmap")) return(NULL)
+      current_report <- report()
+      same_view <- !is.null(current_report) &&
+        identical(current_report$parameters$plot_type, selected_view())
+      default <- if (same_view) {
+        isTRUE(current_report$parameters$scale_rows)
+      } else {
+        !identical(selected_view(), "module_trajectories")
+      }
+      shiny::checkboxInput(
+        session$ns("scale_rows"), "Scale each gene to a z-score", default
+      )
+    })
+    output$view_guidance <- shiny::renderUI({
+      if (identical(selected_view(), "module_trajectories")) {
+        return(shiny::div(
+          class = "selection-guidance",
+          shiny::icon("chart-line"),
+          shiny::span(
+            shiny::strong("Notebook-style trajectories. "),
+            "Each gene is drawn as its own line and modules are shown in separate rows. Use zero genes per module to reproduce the notebook's all-gene view."
+          )
+        ))
+      }
+      if (identical(selected_view(), "eigengene_heatmap")) {
+        if (!suppressPackageStartupMessages(requireNamespace("pheatmap", quietly = TRUE))) {
+          return(shiny::div(
+            class = "selection-guidance network-memory-warning",
+            shiny::icon("triangle-exclamation"),
+            shiny::span("Install the 'pheatmap' package to create this view.")
+          ))
+        }
+        return(shiny::div(
+          class = "selection-guidance",
+          shiny::icon("table-cells"),
+          shiny::span(
+            shiny::strong("Annotated eigengene heatmap. "),
+            "Samples retain metadata order, as in the notebook; selected metadata columns appear as annotation tracks."
+          )
+        ))
+      }
+      NULL
     })
     output$selection_summary <- shiny::renderUI({
       current <- spec()
@@ -919,7 +1018,10 @@ geneVisualizationServer <- function(id, selected_session, on_complete = NULL) {
         session$ns("run"), "Create plot",
         icon = shiny::icon("chart-line"), class = "btn-primary run-stage-button"
       )
-      if (!ready() || is.null(spec()) || !isTRUE(spec()$normalized_counts_available)) {
+      heatmap_dependency_missing <- identical(selected_view(), "eigengene_heatmap") &&
+        !suppressPackageStartupMessages(requireNamespace("pheatmap", quietly = TRUE))
+      if (!ready() || is.null(spec()) || !isTRUE(spec()$normalized_counts_available) ||
+          heatmap_dependency_missing) {
         button$attribs$disabled <- "disabled"
       }
       button
@@ -929,14 +1031,26 @@ geneVisualizationServer <- function(id, selected_session, on_complete = NULL) {
         modules <- selected_modules()
         if (length(modules) == 0L) stop("Select at least one module.", call. = FALSE)
         genes <- input$genes %||% character()
-        if (identical(input$plot_type, "gene_profiles") && length(genes) == 0L) {
+        if (identical(selected_view(), "gene_profiles") && length(genes) == 0L) {
           stop("Select at least one gene.", call. = FALSE)
         }
         run_error(NULL)
         result <- run_gene_visualization(
           session_dir = selected_path(), network_type = selected_network(),
-          modules = modules, genes = genes, plot_type = input$plot_type,
-          group_column = input$group_column, scale_rows = isTRUE(input$scale_rows),
+          modules = modules, genes = genes, plot_type = selected_view(),
+          group_column = input$group_column %||% "",
+          scale_rows = isTRUE(input$scale_rows),
+          annotation_columns = if (identical(selected_view(), "eigengene_heatmap")) {
+            if (is.null(input$annotation_columns)) {
+              spec()$default_annotation_columns
+            } else {
+              input$annotation_columns
+            }
+          } else {
+            character()
+          },
+          sample_label_columns = input$sample_label_columns %||% character(),
+          trajectory_max_genes_per_module = input$trajectory_max_genes_per_module %||% 0,
           verbose = FALSE
         )
         report(result)
@@ -949,7 +1063,7 @@ geneVisualizationServer <- function(id, selected_session, on_complete = NULL) {
     output$run_feedback <- downstream_feedback(report, run_error, "Visualization created")
     output$visualization_plot <- shiny::renderPlot({
       shiny::req(report())
-      print(report()$plot)
+      draw_visualization_plot(report()$plot)
     }, res = 110)
     output$visualization_table <- shiny::renderTable({
       shiny::req(report())
@@ -958,8 +1072,15 @@ geneVisualizationServer <- function(id, selected_session, on_complete = NULL) {
     output$results_panel <- shiny::renderUI({
       current <- report()
       if (is.null(current)) return(downstream_empty("No saved visualization yet."))
+      titles <- c(
+        gene_profiles = "Selected-gene profiles",
+        module_trajectories = "Individual-gene module trajectories",
+        module_summary = "Module mean trajectories",
+        eigengene_heatmap = "Annotated module eigengene heatmap"
+      )
+      result_title <- unname(titles[current$parameters$plot_type]) %||% "Expression visualization"
       shiny::tagList(
-        downstream_results_heading("Expression visualization", current$completed_at),
+        downstream_results_heading(result_title, current$completed_at),
         bslib::navset_card_tab(
           title = "Visualization result",
           bslib::nav_panel("Plot", shiny::plotOutput(session$ns("visualization_plot"), height = "680px")),

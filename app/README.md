@@ -53,8 +53,9 @@ The current milestone provides:
 - Arabidopsis GO and KEGG enrichment with selectable modules, database-specific
   controls, TAIR-to-Entrez mapping diagnostics, cutoffs, result tables, and
   separate plots and artifacts;
-- dynamic normalized-expression, module-summary, and eigengene visualizations
-  with selectable genes and sample grouping;
+- dynamic normalized-expression views with selectable genes, notebook-faithful
+  individual-gene module trajectories, module summaries, configurable sample
+  labels, and metadata-annotated eigengene heatmaps;
 - versioned persistent session state that restores the last open stage and
   records each run's parameters, selected source files, upstream artifacts,
   and outputs;
