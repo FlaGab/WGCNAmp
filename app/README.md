@@ -34,13 +34,16 @@ The current milestone provides:
   controls, reusable filtering settings, sample exclusions, and QC grouping;
 - execution of `run_data_preparation()` with the legacy
   `out/1_prepared_data.RData` artifact retained for downstream stages;
-- persistent preparation metrics plus PCA and sample-clustering previews;
+- persistent preparation metrics that distinguish import, missing-value QC,
+  low-expression filtering, and sample exclusion, plus PCA and
+  sample-clustering previews;
 - a soft-threshold screen with configurable candidate powers, network type,
   scale-free fit target, explicit selection policy, diagnostics, and the legacy
   `out/2_pt.Rdata` artifact;
 - background network construction with blockwise and step-by-step methods,
-  persisted task state and logs, method-compatible TOM manifests, module
-  diagnostics, and standardized network artifacts;
+  retained method-specific block-size and adjacency settings, persisted task
+  state and logs, method-compatible TOM manifests, downloadable block
+  dendrogram/eigengene diagnostics, and standardized network artifacts;
 - dynamic module–trait controls populated from each session's traits, metadata,
   and available networks, including reference-level selection, automatic
   single-level exclusion, contrast previews, correlation tables, heatmaps, and

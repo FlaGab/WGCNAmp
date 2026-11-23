@@ -845,6 +845,16 @@ h6 {
   overflow-wrap: anywhere;
 }
 
+.network-results-stack {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.network-results-stack .card {
+  min-width: 0;
+}
+
 @media (max-width: 800px) {
   .app-content {
     padding: 0.85rem;

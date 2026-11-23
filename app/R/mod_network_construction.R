@@ -151,9 +151,28 @@ networkConstructionServer <- function(id,
                                       on_complete = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     report <- shiny::reactiveVal(NULL)
+    network_result <- shiny::reactiveVal(NULL)
     run_error <- shiny::reactiveVal(NULL)
     running_job <- shiny::reactiveVal(NULL)
     handled_job <- shiny::reactiveVal(NULL)
+    block_size_setting <- shiny::reactiveVal(20000L)
+    save_adjacency_setting <- shiny::reactiveVal(TRUE)
+
+    resolve_plot_file <- function(path) {
+      if (is.null(path) || length(path) == 0L || !nzchar(path[[1L]])) {
+        return(NULL)
+      }
+      path <- path[[1L]]
+      if (file.exists(path)) {
+        return(path)
+      }
+      session_path <- selected_path()
+      if (is.null(session_path)) {
+        return(NULL)
+      }
+      relocated <- file.path(session_path, "plots", basename(path))
+      if (file.exists(relocated)) relocated else NULL
+    }
 
     selected_path <- shiny::reactive({
       selected <- selected_session()
@@ -183,9 +202,23 @@ networkConstructionServer <- function(id,
     shiny::observeEvent(selected_path(), {
       current <- load_network_report(selected_path())
       report(current)
+      result_path <- file.path(selected_path(), "out", "3_networks.rds")
+      network_result(if (file.exists(result_path)) {
+        tryCatch(readRDS(result_path), error = function(error) NULL)
+      } else {
+        NULL
+      })
       run_error(NULL)
       if (!is.null(current)) {
         parameters <- current$parameters
+        block_size_setting(as.integer(parameters$max_block_size %||% 20000L))
+        save_adjacency_setting(
+          if (identical(parameters$method, "stepwise")) {
+            isTRUE(parameters$save_adjacency)
+          } else {
+            TRUE
+          }
+        )
         shiny::updateRadioButtons(session, "method", selected = parameters$method)
         shiny::updateSelectInput(
           session, "correlation_type", selected = parameters$correlation_type
@@ -206,6 +239,15 @@ networkConstructionServer <- function(id,
         )
       }
     }, ignoreNULL = TRUE)
+
+    shiny::observeEvent(input$max_block_size, {
+      value <- suppressWarnings(as.integer(input$max_block_size))
+      if (!is.na(value) && value >= 2L) block_size_setting(value)
+    }, ignoreInit = TRUE)
+
+    shiny::observeEvent(input$save_adjacency, {
+      save_adjacency_setting(isTRUE(input$save_adjacency))
+    }, ignoreInit = TRUE)
 
     output$stage_badge <- shiny::renderUI({
       report()
@@ -240,7 +282,7 @@ networkConstructionServer <- function(id,
           shiny::numericInput(
             session$ns("max_block_size"),
             "Maximum genes per block",
-            value = 20000,
+            value = block_size_setting(),
             min = 2,
             step = 100
           ),
@@ -254,7 +296,7 @@ networkConstructionServer <- function(id,
           shiny::checkboxInput(
             session$ns("save_adjacency"),
             "Save the adjacency matrix",
-            value = TRUE
+            value = save_adjacency_setting()
           ),
           shiny::div(
             class = "selection-guidance network-memory-warning",
@@ -344,7 +386,7 @@ networkConstructionServer <- function(id,
           job_id = job_id,
           method = input$method,
           max_block_size = if (identical(input$method, "blockwise")) {
-            input$max_block_size %||% 20000
+            input$max_block_size %||% block_size_setting()
           } else {
             20000
           },
@@ -356,7 +398,11 @@ networkConstructionServer <- function(id,
           random_seed = input$random_seed,
           kmeans_refinement = isTRUE(input$kmeans_refinement),
           save_adjacency = if (identical(input$method, "stepwise")) {
-            isTRUE(input$save_adjacency)
+            if (is.null(input$save_adjacency)) {
+              save_adjacency_setting()
+            } else {
+              isTRUE(input$save_adjacency)
+            }
           } else {
             FALSE
           },
@@ -388,6 +434,12 @@ networkConstructionServer <- function(id,
         handled_job(job$id)
         if (identical(selected_path(), job$path)) {
           report(value)
+          result_path <- file.path(job$path, "out", "3_networks.rds")
+          network_result(if (file.exists(result_path)) {
+            tryCatch(readRDS(result_path), error = function(error) NULL)
+          } else {
+            NULL
+          })
           shiny::showNotification(
             paste0("Network construction completed with ", value$modules_hc, " HC modules."),
             type = "message",
@@ -484,6 +536,78 @@ networkConstructionServer <- function(id,
           shiny::span(label)
         )
       }
+      result <- network_result()
+      module_sizes <- bslib::navset_card_tab(
+        title = "Module sizes",
+        bslib::nav_panel(
+          "Hierarchical clustering",
+          shiny::plotOutput(session$ns("hc_module_plot"), height = "480px")
+        ),
+        if (!is.null(current$modules_kmeans)) {
+          bslib::nav_panel(
+            "K-means refinement",
+            shiny::plotOutput(session$ns("km_module_plot"), height = "480px")
+          )
+        },
+        bslib::nav_panel(
+          "Table",
+          shiny::div(
+            class = "threshold-table-wrap",
+            shiny::tableOutput(session$ns("module_table"))
+          )
+        )
+      )
+      diagnostic_panels <- list()
+      if (!is.null(result$network$dendrograms) &&
+          !is.null(result$network$blockGenes)) {
+        diagnostic_panels <- c(
+          diagnostic_panels,
+          list(bslib::nav_panel(
+            "HC dendrogram",
+            shiny::uiOutput(session$ns("dendrogram_block_selector")),
+            shiny::plotOutput(session$ns("hc_dendrogram_plot"), height = "560px"),
+            shiny::downloadButton(
+              session$ns("download_hc_dendrogram"),
+              "Download selected dendrogram"
+            )
+          ))
+        )
+      }
+      if (!is.null(result$network$MEs) && ncol(result$network$MEs) >= 2L) {
+        diagnostic_panels <- c(
+          diagnostic_panels,
+          list(bslib::nav_panel(
+            "HC eigengenes",
+            shiny::plotOutput(session$ns("hc_eigengene_plot"), height = "560px"),
+            shiny::downloadButton(
+              session$ns("download_hc_eigengenes"),
+              "Download HC eigengene plot"
+            )
+          ))
+        )
+      }
+      if (!is.null(result$network_kmeans$MEs) &&
+          ncol(result$network_kmeans$MEs) >= 2L) {
+        diagnostic_panels <- c(
+          diagnostic_panels,
+          list(bslib::nav_panel(
+            "K-means eigengenes",
+            shiny::plotOutput(session$ns("km_eigengene_plot"), height = "560px"),
+            shiny::downloadButton(
+              session$ns("download_km_eigengenes"),
+              "Download k-means eigengene plot"
+            )
+          ))
+        )
+      }
+      diagnostics <- if (length(diagnostic_panels) > 0L) {
+        do.call(
+          bslib::navset_card_tab,
+          c(list(title = "Network diagnostics"), diagnostic_panels)
+        )
+      } else {
+        NULL
+      }
       shiny::tagList(
         shiny::div(
           class = "results-heading",
@@ -505,25 +629,10 @@ networkConstructionServer <- function(id,
         ),
         bslib::layout_columns(
           col_widths = c(8, 4),
-          bslib::navset_card_tab(
-            title = "Module sizes",
-            bslib::nav_panel(
-              "Hierarchical clustering",
-              shiny::plotOutput(session$ns("hc_module_plot"), height = "480px")
-            ),
-            if (!is.null(current$modules_kmeans)) {
-              bslib::nav_panel(
-                "K-means refinement",
-                shiny::plotOutput(session$ns("km_module_plot"), height = "480px")
-              )
-            },
-            bslib::nav_panel(
-              "Table",
-              shiny::div(
-                class = "threshold-table-wrap",
-                shiny::tableOutput(session$ns("module_table"))
-              )
-            )
+          shiny::div(
+            class = "network-results-stack",
+            module_sizes,
+            diagnostics
           ),
           bslib::card(
             class = "network-artifacts-card",
@@ -545,6 +654,27 @@ networkConstructionServer <- function(id,
       )
     })
 
+    output$dendrogram_block_selector <- shiny::renderUI({
+      result <- network_result()
+      shiny::req(result$network$dendrograms)
+      blocks <- seq_along(result$network$dendrograms)
+      if (length(blocks) == 1L) {
+        return(shiny::p(class = "field-help", "Dendrogram for the single network block."))
+      }
+      shiny::selectInput(
+        session$ns("dendrogram_block"),
+        "Network block",
+        choices = stats::setNames(blocks, paste("Block", blocks)),
+        selected = blocks[[1L]],
+        width = "220px"
+      )
+    })
+
+    selected_dendrogram_block <- shiny::reactive({
+      block <- suppressWarnings(as.integer(input$dendrogram_block %||% 1L))
+      if (is.na(block)) 1L else block
+    })
+
     output$hc_module_plot <- shiny::renderPlot({
       shiny::req(report())
       counts <- subset(report()$module_counts, network == "Hierarchical clustering")
@@ -561,6 +691,80 @@ networkConstructionServer <- function(id,
       shiny::req(report())
       report()$module_counts
     }, striped = TRUE, hover = TRUE, spacing = "s")
+
+    output$hc_dendrogram_plot <- shiny::renderPlot({
+      result <- network_result()
+      shiny::req(result$network)
+      draw_network_dendrogram(
+        result$network,
+        selected_dendrogram_block(),
+        "HC"
+      )
+    }, res = 110)
+
+    output$hc_eigengene_plot <- shiny::renderPlot({
+      result <- network_result()
+      shiny::req(result$network)
+      draw_eigengene_network(result$network, "HC")
+    }, res = 110)
+
+    output$km_eigengene_plot <- shiny::renderPlot({
+      result <- network_result()
+      shiny::req(result$network_kmeans)
+      draw_eigengene_network(result$network_kmeans, "K-means")
+    }, res = 110)
+
+    output$download_hc_dendrogram <- shiny::downloadHandler(
+      filename = function() {
+        paste0("3_HC_modules_dendrogram_block_", selected_dendrogram_block(), ".pdf")
+      },
+      content = function(file) {
+        block <- selected_dendrogram_block()
+        stored <- report()$files$dendrograms_hc
+        source <- if (length(stored) >= block) resolve_plot_file(stored[[block]]) else NULL
+        if (!is.null(source)) {
+          file.copy(source, file, overwrite = TRUE)
+          return(invisible(NULL))
+        }
+        result <- network_result()
+        shiny::req(result$network)
+        grDevices::pdf(file, width = 9, height = 6, bg = "white")
+        on.exit(grDevices::dev.off(), add = TRUE)
+        draw_network_dendrogram(result$network, block, "HC")
+      }
+    )
+
+    output$download_hc_eigengenes <- shiny::downloadHandler(
+      filename = function() "3_modules_HC_eigengenes.pdf",
+      content = function(file) {
+        source <- resolve_plot_file(report()$files$eigengenes_hc)
+        if (!is.null(source)) {
+          file.copy(source, file, overwrite = TRUE)
+          return(invisible(NULL))
+        }
+        result <- network_result()
+        shiny::req(result$network)
+        grDevices::pdf(file, width = 8, height = 6, bg = "white")
+        on.exit(grDevices::dev.off(), add = TRUE)
+        draw_eigengene_network(result$network, "HC")
+      }
+    )
+
+    output$download_km_eigengenes <- shiny::downloadHandler(
+      filename = function() "3_modules_KM_eigengenes.pdf",
+      content = function(file) {
+        source <- resolve_plot_file(report()$files$eigengenes_kmeans)
+        if (!is.null(source)) {
+          file.copy(source, file, overwrite = TRUE)
+          return(invisible(NULL))
+        }
+        result <- network_result()
+        shiny::req(result$network_kmeans)
+        grDevices::pdf(file, width = 8, height = 6, bg = "white")
+        on.exit(grDevices::dev.off(), add = TRUE)
+        draw_eigengene_network(result$network_kmeans, "K-means")
+      }
+    )
 
     output$download_log <- shiny::downloadHandler(
       filename = function() "3_network_construction.log",

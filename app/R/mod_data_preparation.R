@@ -783,22 +783,58 @@ dataPreparationServer <- function(id, selected_session, on_complete = NULL) {
       metric <- function(value, label) {
         shiny::div(
           class = "summary-metric",
-          shiny::strong(format(value, big.mark = ",", scientific = FALSE)),
+          shiny::strong(
+            if (is.null(value) || length(value) == 0L || is.na(value)) {
+              "—"
+            } else {
+              format(value, big.mark = ",", scientific = FALSE)
+            }
+          ),
           shiny::span(label)
         )
       }
+      difference <- function(larger, smaller) {
+        if (is.null(larger) || is.null(smaller)) return(NULL)
+        max(0, as.numeric(larger) - as.numeric(smaller))
+      }
+      genes_after_missing_qc <- summary$genes_after_missing_qc %||%
+        summary$retained_genes
+      removed_missing_qc <- difference(
+        summary$input_genes,
+        genes_after_missing_qc
+      )
+      removed_expression_filter <- difference(
+        genes_after_missing_qc,
+        summary$retained_genes
+      )
+      excluded_sample_count <- difference(
+        summary$input_samples,
+        summary$retained_samples
+      )
       excluded <- unique(c(
         summary$automatic_sample_exclusions,
         summary$configured_sample_exclusions
       ))
       bslib::card(
         class = "summary-card",
-        bslib::card_header("Retained data"),
+        bslib::card_header("Preparation metrics"),
+        shiny::h3("Genes"),
         shiny::div(
           class = "summary-metrics",
+          metric(summary$input_genes, "genes imported"),
+          metric(genes_after_missing_qc, "after missing-value QC"),
           metric(summary$retained_genes, "genes retained"),
-          metric(summary$removed_genes, "genes removed"),
-          metric(summary$retained_samples, "samples retained")
+          metric(summary$removed_genes, "genes removed in total"),
+          metric(removed_missing_qc, "removed by missing-value QC"),
+          metric(removed_expression_filter, "removed by low-expression filter")
+        ),
+        shiny::hr(),
+        shiny::h3("Samples"),
+        shiny::div(
+          class = "summary-metrics",
+          metric(summary$input_samples, "samples imported"),
+          metric(summary$retained_samples, "samples retained"),
+          metric(excluded_sample_count, "samples excluded")
         ),
         shiny::hr(),
         shiny::h3("Sample exclusions"),

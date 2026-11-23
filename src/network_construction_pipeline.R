@@ -365,6 +365,43 @@ network_module_count_plot <- function(counts, title) {
     ggplot2::theme_minimal(base_size = 12)
 }
 
+draw_network_dendrogram <- function(network, block = 1L, label = "HC") {
+  if (is.null(network$dendrograms) || is.null(network$blockGenes)) {
+    stop("The network does not contain dendrogram data.", call. = FALSE)
+  }
+  block <- as.integer(block)
+  if (is.na(block) || block < 1L || block > length(network$dendrograms)) {
+    stop("Invalid dendrogram block.", call. = FALSE)
+  }
+  block_genes <- network$blockGenes[[block]]
+  WGCNA::plotDendroAndColors(
+    network$dendrograms[[block]],
+    network$colors[block_genes],
+    paste(label, "modules"),
+    dendroLabels = FALSE,
+    hang = 0.03,
+    addGuide = TRUE,
+    guideHang = 0.05
+  )
+  invisible(NULL)
+}
+
+draw_eigengene_network <- function(network, label = "HC") {
+  if (is.null(network$MEs) || ncol(network$MEs) < 2L) {
+    stop("At least two module eigengenes are required.", call. = FALSE)
+  }
+  WGCNA::plotEigengeneNetworks(
+    WGCNA::orderMEs(network$MEs),
+    setLabels = paste(label, "modules"),
+    marDendro = c(0, 4, 1, 2),
+    marHeatmap = c(3, 4, 1, 2),
+    cex.lab = 0.8,
+    xLabelsAngle = 90,
+    plotPreservation = "standard"
+  )
+  invisible(NULL)
+}
+
 save_network_dendrograms <- function(network, session_dir, label) {
   files <- character()
   if (is.null(network$dendrograms) || is.null(network$blockGenes)) {
@@ -380,16 +417,7 @@ save_network_dendrograms <- function(network, session_dir, label) {
     device <- grDevices::dev.cur()
     plotted <- tryCatch(
       {
-        block_genes <- network$blockGenes[[index]]
-        WGCNA::plotDendroAndColors(
-          network$dendrograms[[index]],
-          network$colors[block_genes],
-          paste(label, "modules"),
-          dendroLabels = FALSE,
-          hang = 0.03,
-          addGuide = TRUE,
-          guideHang = 0.05
-        )
+        draw_network_dendrogram(network, index, label)
         TRUE
       },
       error = function(error) {
@@ -423,15 +451,7 @@ save_eigengene_network_plot <- function(network, path, label) {
   device <- grDevices::dev.cur()
   plotted <- tryCatch(
     {
-      WGCNA::plotEigengeneNetworks(
-        WGCNA::orderMEs(network$MEs),
-        setLabels = paste(label, "modules"),
-        marDendro = c(0, 4, 1, 2),
-        marHeatmap = c(3, 4, 1, 2),
-        cex.lab = 0.8,
-        xLabelsAngle = 90,
-        plotPreservation = "standard"
-      )
+      draw_eigengene_network(network, label)
       TRUE
     },
     error = function(error) {
