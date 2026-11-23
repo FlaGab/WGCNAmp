@@ -2,20 +2,16 @@
 title: "WGCNA_step1_data_preparation"
 format: html
 editor: visual
+execute:
+  enabled: false
 ---
+
+> Legacy developer reference. This notebook is not part of the supported user workflow and should not be edited to run an analysis. Use the Shiny GUI.
 
 # Expression data preparation for WGCNA
 
-This report is a thin interface to `run_data_preparation()`. The same function
-can be called from the Shiny application without editing this notebook.
-
-## Environment setup
-
-```{r}
-source("set_parameters.R")
-source("src/1_env_setup.R")
-create_session_env(session_name)
-```
+This archived report documents the `run_data_preparation()` programmatic API.
+Advanced users should call that function directly from R code.
 
 ## Dataset-specific metadata
 
@@ -51,18 +47,18 @@ add_cross_metadata <- function(metadata) {
 
 ```{r}
 preparation_result <- run_data_preparation(
-  session_dir = session_name,
-  counts_file = count.matrix,
-  gene_length_column = gene.length.column,
-  metadata_file = metadata.filename,
-  traits_file = traits.filename,
+  session_dir = session_dir,
+  counts_file = counts_file,
+  gene_length_column = NULL,
+  metadata_file = metadata_file,
+  traits_file = NULL,
   traits_sample_id = "sample",
   traits_sep = ";",
-  excluded_samples = excluded_samples,
-  filtering_method = filtering_method,
-  n = n,
-  m = m,
-  p = p,
+  excluded_samples = character(),
+  filtering_method = "2",
+  n = 10,
+  m = 3,
+  p = 0.75,
   qc_color_column = "cross",
   metadata_transform = add_cross_metadata
 )

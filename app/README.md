@@ -26,7 +26,8 @@ network jobs.
 The current milestone provides:
 
 - discovery and selection of existing analysis sessions;
-- safe creation of a new session from `set_parameters.R`;
+- safe creation of self-contained GUI sessions whose configuration is stored
+  in `session_state.rds` and stage reports;
 - sidebar navigation for the seven pipeline stages;
 - stage status inferred from existing artifacts;
 - recent-artifact visibility;
@@ -65,5 +66,6 @@ The current milestone provides:
 - stale-step detection that propagates upstream input or artifact changes to
   dependent stages while preserving their existing results for inspection.
 
-The GUI currently executes all seven steps. Existing notebooks remain available
-and continue to use the same pipeline artifacts.
+The Shiny application is the supported user interface for all seven stages.
+Legacy Quarto notebooks are retained only as implementation and reproducibility
+references.

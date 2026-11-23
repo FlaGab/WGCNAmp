@@ -3,25 +3,37 @@ title: "5_hub_genes"
 author: "Flavio Gabrieli"
 format: html
 editor: visual
+execute:
+  enabled: false
 ---
+
+> Legacy developer reference. This notebook is not part of the supported user workflow and should not be edited to run an analysis. Use the Shiny GUI.
 
 # Identification of hub genes, imputation of gene significance, connectivity plot
 
-Resume session
+The maintained entry point is `run_hub_analysis()`. Advanced users should call
+it directly from R code with explicit arguments:
 
 ```{r}
-session_name <- "WGCNA_test"
+hub_result <- run_hub_analysis(
+  session_dir = session_dir,
+  network_type = network_type,
+  modules = modules,
+  min_module_membership = 0.8,
+  connectivity_quantile = 0.9,
+  connectivity_mode = "tom",
+  create_tom_outputs = TRUE
+)
 ```
 
-Load environment
+The remaining chunks preserve the earlier low-level implementation for
+provenance only.
 
 ```{r}
-source("src/5_env_setup.R")
-load(paste0(session_name, "/out/1_prepared_data.RData"))
-source(paste0(session_name, "/in/", session_name,"_parameters.R"))
+load(file.path(session_dir, "out", "1_prepared_data.RData"))
 
 network_result <- readRDS(
-  file.path(session_name, "out", "3_networks.rds")
+  file.path(session_dir, "out", "3_networks.rds")
 )
 net <- network_result$network
 net_km <- network_result$network_kmeans
@@ -42,13 +54,13 @@ TOM <- load_network_tom(network_result)
 ```{r}
 net_km$IMconnectivity <- intramodularConnectivity(adjMat = TOM, colors = net_km$colors)
 rownames(net_km$IMconnectivity) <- colnames(data$exprData)
-write.table(net_km$IMconnectivity, file = paste0(session_name,"/out/intramodular_connectivity_km.csv"))
+write.table(net_km$IMconnectivity, file = file.path(session_dir, "out", "intramodular_connectivity_km.csv"))
 ```
 
 ```{r}
 net$IMconnectivity <- intramodularConnectivity(adjMat = TOM, colors = net$colors)
 rownames(net$IMconnectivity) <- colnames(data$exprData)
-write.table(net$IMconnectivity, file = paste0(session_name,"/out/intramodular_connectivity_hc.csv"))
+write.table(net$IMconnectivity, file = file.path(session_dir, "out", "intramodular_connectivity_hc.csv"))
 ```
 
 3.  Calculate Module Membership
@@ -60,11 +72,11 @@ net_km$geneMM <- cor(data$exprData, net_km$MEs)
 net$geneMM <- cor(data$exprData, net$MEs)
 readr::write_csv(
   tibble::rownames_to_column(as.data.frame(net_km$geneMM), "gene"),
-  file.path(session_name, "out", "geneMM_km.csv")
+  file.path(session_dir, "out", "geneMM_km.csv")
 )
 readr::write_csv(
   tibble::rownames_to_column(as.data.frame(net$geneMM), "gene"),
-  file.path(session_name, "out", "geneMM_hc.csv")
+  file.path(session_dir, "out", "geneMM_hc.csv")
 )
 ```
 
@@ -87,7 +99,7 @@ assign(paste0(moduleColor, "_",network_name,"_hubGenes"), hub_genes(network = ge
        )
 
 #export table
-write.table(rownames(get(paste0(moduleColor, "_",network_name,"_hubGenes"))), file = paste0(session_name,"/out/",moduleColor, "_",network_name,"_hubGenes.txt"), quote = FALSE, col.names = FALSE, row.names = FALSE)
+write.table(rownames(get(paste0(moduleColor, "_",network_name,"_hubGenes"))), file = file.path(session_dir, "out", paste0(moduleColor, "_", network_name, "_hubGenes.txt")), quote = FALSE, col.names = FALSE, row.names = FALSE)
 ```
 
 ## Calculate Gene Significance (GS)
@@ -131,7 +143,7 @@ TOMplot(dissim = dissTOM^6,
 ```
 
 ```{r}
-png(file = paste0(session_name,"/plots/connectivity_", network_name,"_",paste0(modules, collapse = "-"),".png"),
+png(file = file.path(session_dir, "plots", paste0("connectivity_", network_name, "_", paste0(modules, collapse = "-"), ".png")),
   width = 8,          # Width in inches
   height = 8,  # Height in inches
   units = "in",
@@ -160,8 +172,8 @@ altNamses = get_TAIRsymbols(modProbes) # get TAIR symbols for annotation of the 
 edge_threshold =  calculateEdgeWeightThreshold(tom = modTOM, percentile = 0.95) #define a threshold for edges
 
 exportNetworkToCytoscape(modTOM,
-  edgeFile = paste(session_name,"/out/cytoscape/CytoscapeInput-edges-", paste(modules, collapse="-"),"edge_threshold_", round(edge_threshold, digits = 2),".txt", sep=""),
-  nodeFile = paste(session_name,"/out/cytoscape/CytoscapeInput-nodes-", paste(modules, collapse="-"), "edge_threshold_", round(edge_threshold, digits = 2),".txt", sep=""),
+  edgeFile = file.path(session_dir, "out", "cytoscape", paste0("CytoscapeInput-edges-", paste(modules, collapse="-"), "edge_threshold_", round(edge_threshold, digits = 2), ".txt")),
+  nodeFile = file.path(session_dir, "out", "cytoscape", paste0("CytoscapeInput-nodes-", paste(modules, collapse="-"), "edge_threshold_", round(edge_threshold, digits = 2), ".txt")),
   weighted = TRUE,
   threshold = edge_threshold,
   nodeNames = modProbes,

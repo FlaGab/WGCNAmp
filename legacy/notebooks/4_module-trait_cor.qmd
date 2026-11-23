@@ -3,25 +3,38 @@ title: "4_module-traits_correlations"
 author: "Flavio Gabrieli"
 format: html
 editor: visual
+execute:
+  enabled: false
 ---
+
+> Legacy developer reference. This notebook is not part of the supported user workflow and should not be edited to run an analysis. Use the Shiny GUI.
 
 # Module-trait correlation
 
-Resume session
+The maintained entry point is `run_module_trait_analysis()`. Advanced users
+should call it directly from R code with explicit arguments:
 
 ```{r}
-session_name <- "WGCNA_test"
+module_trait_result <- run_module_trait_analysis(
+  session_dir = session_dir,
+  continuous_traits = continuous_traits,
+  categorical_variables = categorical_variables,
+  reference_levels = reference_levels,
+  network_types = c("hc", "kmeans"),
+  continuous_method = "pearson",
+  fit_categorical_models = TRUE,
+  model_covariates = model_covariates
+)
 ```
 
-Load environment
+The remaining chunks preserve the earlier low-level implementation for
+provenance only.
 
 ```{r}
-source("src/4_env_setup.R")
-load(paste0(session_name, "/out/1_prepared_data.RData"))
-source(paste0(session_name, "/in/", session_name,"_parameters.R"))
+load(file.path(session_dir, "out", "1_prepared_data.RData"))
 
 network_result <- readRDS(
-  file.path(session_name, "out", "3_networks.rds")
+  file.path(session_dir, "out", "3_networks.rds")
 )
 net <- network_result$network
 net_km <- network_result$network_kmeans
@@ -33,7 +46,7 @@ net_km <- network_result$network_kmeans
 if(!is.null(data$traits)){
   CTC <- continuous_traits_correlations(data, net)
   print(CTC)
-  pdf(file = paste0(session_name,"/plots/4_cont_traits_correlation.pdf"), 
+  pdf(file = file.path(session_dir, "plots", "4_cont_traits_correlation.pdf"), 
   width = 8,          # Width in inches
   height = 6,         # Height in inches
   bg = "white")
@@ -77,7 +90,7 @@ binary.matrix.output <- data.frame(
 )
 readr::write_tsv(
   binary.matrix.output,
-  file.path(session_name, "out", "module_trait_binary_contrasts.tsv")
+  file.path(session_dir, "out", "module_trait_binary_contrasts.tsv")
 )
 ```
 
@@ -89,14 +102,14 @@ corr.cat.var.km <- correlation_categorical_var(network = net_km, binary_matrix =
 ```
 
 ```{r}
-pdf(file = paste0(session_name,"/plots/EMhc-condition_corr.pdf"), 
+pdf(file = file.path(session_dir, "plots", "EMhc-condition_corr.pdf"), 
   width = 10,          # Width in inches
   height = 16.18,         # Height in inches
   bg = "white")
 plot(corr.cat.var$hm)
 dev.off()
 
-pdf(file = paste0(session_name,"/plots/EMkm-condition_corr.pdf"), 
+pdf(file = file.path(session_dir, "plots", "EMkm-condition_corr.pdf"), 
   width = 10,          # Width in inches
   height = 16.18,         # Height in inches
   bg = "white")
@@ -111,14 +124,14 @@ The Estimate for the binary predictor indicates the difference in the mean eigen
 ```{r}
 plot.type = "dotplot" #choose between dotplot or heatmap
 
-pdf(file = paste0(session_name,"/plots/EMkm-condition_corr_lm_", plot.type,".pdf"), 
+pdf(file = file.path(session_dir, "plots", paste0("EMkm-condition_corr_lm_", plot.type, ".pdf")), 
   width = 10,          # Width in inches
   height = 16.18,         # Height in inches
   bg = "white")
 correlation_categorical_var_lm(network = net_km, binary_matrix = binary.matrix, plot_type = plot.type)
 dev.off()
 
-pdf(file = paste0(session_name,"/plots/EMhc-condition_corr_lm_", plot.type,".pdf"), 
+pdf(file = file.path(session_dir, "plots", paste0("EMhc-condition_corr_lm_", plot.type, ".pdf")), 
   width = 10,          # Width in inches
   height = 16.18,         # Height in inches
   bg = "white")

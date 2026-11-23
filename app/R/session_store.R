@@ -28,14 +28,18 @@ stage_definitions <- function() {
       "Run GO and KEGG enrichment for selected modules.",
       "Explore gene trajectories, module summaries, and metadata-annotated eigengene heatmaps."
     ),
-    notebook = c(
-      "1_data_preparation.qmd",
-      "2_sft_power_estim.qmd",
-      "3_WGCN-auto.qmd",
-      "4_module-trait_cor.qmd",
-      "5_hub_genes.qmd",
-      "6_modules_GO_enrichment.qmd",
-      "7_visualization_genes.qmd"
+    notebook = file.path(
+      "legacy",
+      "notebooks",
+      c(
+        "1_data_preparation.qmd",
+        "2_sft_power_estim.qmd",
+        "3_WGCN-auto.qmd",
+        "4_module-trait_cor.qmd",
+        "5_hub_genes.qmd",
+        "6_modules_GO_enrichment.qmd",
+        "7_visualization_genes.qmd"
+      )
     ),
     stringsAsFactors = FALSE
   )
@@ -306,18 +310,15 @@ discover_analysis_sessions <- function(project_root = wgcnamp_project_root()) {
     return(data.frame(
       name = character(),
       path = character(),
-      parameter_file = character(),
       stringsAsFactors = FALSE
     ))
   }
 
   names <- basename(candidates)
-  parameter_files <- file.path(candidates, "in", paste0(names, "_parameters.R"))
 
   result <- data.frame(
     name = names,
     path = normalizePath(candidates, mustWork = TRUE),
-    parameter_file = parameter_files,
     stringsAsFactors = FALSE
   )
   result[order(tolower(result$name)), , drop = FALSE]
@@ -345,11 +346,6 @@ create_analysis_session <- function(name,
     stop("A file or session named '", name, "' already exists.", call. = FALSE)
   }
 
-  template <- file.path(project_root, "set_parameters.R")
-  if (!file.exists(template)) {
-    stop("The parameter template 'set_parameters.R' was not found.", call. = FALSE)
-  }
-
   staging <- tempfile(pattern = ".wgcnamp-session-", tmpdir = project_root)
   dir.create(staging)
   committed <- FALSE
@@ -371,15 +367,6 @@ create_analysis_session <- function(name,
   for (directory in directories) {
     dir.create(file.path(staging, directory), recursive = TRUE, showWarnings = FALSE)
   }
-
-  parameter_file <- file.path(staging, "in", paste0(name, "_parameters.R"))
-  parameters <- readLines(template, warn = FALSE)
-  session_line <- grep("^session_name\\s*<-", parameters)
-  if (length(session_line) != 1L) {
-    stop("The parameter template must define exactly one 'session_name'.", call. = FALSE)
-  }
-  parameters[session_line] <- paste0("session_name <- ", encodeString(name, quote = '"'))
-  writeLines(parameters, parameter_file)
 
   saveRDS(new_session_state(name), file.path(staging, "session_state.rds"))
 

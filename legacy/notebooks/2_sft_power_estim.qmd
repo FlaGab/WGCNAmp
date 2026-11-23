@@ -2,20 +2,17 @@
 title: "WGCNA step 2: soft-threshold selection"
 format: html
 editor: visual
+execute:
+  enabled: false
 ---
+
+> Legacy developer reference. This notebook is not part of the supported user workflow and should not be edited to run an analysis. Use the Shiny GUI.
 
 # Soft-threshold selection
 
-This report is a thin interface to `run_soft_threshold_selection()`. The same
-function powers the Shiny screen, so the notebook and GUI produce compatible
-artifacts.
-
-## Environment setup
-
-```{r}
-source("set_parameters.R")
-source("src/2_env_setup.R")
-```
+This archived report documents the `run_soft_threshold_selection()`
+programmatic API. Advanced users should call that function directly from R
+code.
 
 ## Evaluate and select a power
 
@@ -25,8 +22,8 @@ use `selection_mode = "manual"` together with `manual_power`.
 
 ```{r}
 soft_threshold_result <- run_soft_threshold_selection(
-  session_dir = session_name,
-  network_type = network_type,
+  session_dir = session_dir,
+  network_type = "signed",
   powers = default_soft_threshold_powers(),
   fit_cutoff = 0.80,
   selection_mode = "first_above_cutoff"
@@ -52,4 +49,4 @@ soft_threshold_result$fit_indices
 ```
 
 The selected power is saved in `out/2_pt.Rdata`, preserving the artifact used
-by the network-construction notebooks.
+by Stage 3.

@@ -74,7 +74,7 @@ sessionSelectorServer <- function(id, project_root) {
         ),
         shiny::p(
           class = "text-secondary",
-          "The app will create the input, output, plot, and log directories and copy the parameter template."
+          "The app will create an isolated workspace and store its configuration in the session state."
         ),
         footer = shiny::tagList(
           shiny::modalButton("Cancel"),

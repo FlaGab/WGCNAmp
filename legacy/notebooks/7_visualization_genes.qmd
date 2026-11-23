@@ -3,20 +3,38 @@ title: "6_genes_visualization"
 author: "Flavio Gabrieli"
 format: html
 editor: visual
+execute:
+  enabled: false
 ---
+
+> Legacy developer reference. This notebook is not part of the supported user workflow and should not be edited to run an analysis. Use the Shiny GUI.
 
 ## Visualization of gene expression in modules
 
-Resume session
+The maintained entry point is `run_gene_visualization()`. Advanced users should
+call it directly from R code with explicit arguments:
 
 ```{r}
-session_name <- "fertilization_v1"
+visualization_result <- run_gene_visualization(
+  session_dir = session_dir,
+  network_type = network_type,
+  modules = modules,
+  plot_type = "module_trajectories",
+  group_column = group_column,
+  annotation_columns = annotation_columns
+)
 ```
 
-load environment
+The remaining chunks preserve the earlier low-level implementation for
+provenance only. Load the standardized artifacts supplied by the caller:
 
 ```{r}
-source("src/7_env_setup.R")
+prepared <- new.env(parent = emptyenv())
+load(file.path(session_dir, "out", "1_prepared_data.RData"), envir = prepared)
+data <- prepared$data
+network_result <- readRDS(file.path(session_dir, "out", "3_networks.rds"))
+net <- network_result$network
+net_km <- network_result$network_kmeans
 ```
 
 Load the normalized counts generated during data preparation
@@ -25,7 +43,7 @@ Load the normalized counts generated during data preparation
 if (is.null(data$normalized_counts)) {
   stop(
     "The prepared-data artifact does not contain normalized counts. ",
-    "Re-run 1_data_preparation.qmd with the updated normalization step."
+    "Re-run Stage 1 with the updated normalization step."
   )
 }
 
