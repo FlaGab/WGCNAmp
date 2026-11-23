@@ -148,7 +148,6 @@ server <- function(input, output, session) {
   )
 
   stage_table <- shiny::reactive({
-    shiny::invalidateLater(3000, session)
     selected <- selector$selected()
     selector$revision()
     pipeline_revision()
@@ -274,17 +273,16 @@ server <- function(input, output, session) {
 
   output$stage_content <- shiny::renderUI({
     selected <- selector$selected()
-    stages <- stage_table()
-    if (is.null(selected) || is.null(stages)) {
+    if (is.null(selected)) {
       return(NULL)
     }
 
-    active <- input$active_stage %||% stages$id[[1L]]
-    if (!active %in% stages$id) {
-      active <- stages$id[[1L]]
+    definitions <- stage_definitions()
+    active <- input$active_stage %||% definitions$id[[1L]]
+    if (!active %in% definitions$id) {
+      active <- definitions$id[[1L]]
     }
-    stage <- stages[match(active, stages$id), , drop = FALSE]
-    outputs <- session_output_files(selected$path)
+    stage <- definitions[match(active, definitions$id), , drop = FALSE]
 
     if (identical(active, "step1")) {
       return(dataPreparationUI("data_preparation"))

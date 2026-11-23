@@ -223,6 +223,165 @@ tom_intramodular_connectivity <- function(network_result,
   connectivity
 }
 
+select_tom_output_genes <- function(hub_table, max_genes = 250L) {
+  max_genes <- as.integer(max_genes)
+  if (is.na(max_genes) || max_genes < 2L) {
+    stop("Maximum TOM-output genes must be at least 2.", call. = FALSE)
+  }
+  ranked <- split(hub_table, hub_table$module)
+  ranked <- lapply(ranked, function(table) {
+    table[order(!table$is_hub, -table$abs_module_membership, -table$kWithin), , drop = FALSE]
+  })
+  rounds <- seq_len(max(vapply(ranked, nrow, integer(1))))
+  genes <- unlist(lapply(rounds, function(index) {
+    unlist(lapply(ranked, function(table) {
+      if (index <= nrow(table)) table$gene[[index]] else character()
+    }), use.names = FALSE)
+  }), use.names = FALSE)
+  utils::head(unique(genes), max_genes)
+}
+
+load_selected_tom <- function(network_result,
+                              expression_genes,
+                              selected_genes,
+                              session_dir = NULL) {
+  network_result <- resolve_network_tom_manifest(network_result, session_dir)
+  summary <- network_tom_summary(network_result)
+  if (!isTRUE(summary$available)) stop(summary$message, call. = FALSE)
+  selected_genes <- unique(as.character(selected_genes))
+  unknown <- setdiff(selected_genes, expression_genes)
+  if (length(unknown) > 0L) {
+    stop("Selected TOM genes are absent from the expression matrix.", call. = FALSE)
+  }
+  selected_tom <- matrix(
+    0,
+    nrow = length(selected_genes),
+    ncol = length(selected_genes),
+    dimnames = list(selected_genes, selected_genes)
+  )
+  gene_blocks <- stats::setNames(rep(1L, length(selected_genes)), selected_genes)
+  if (identical(summary$method, "stepwise")) {
+    tom <- load_network_tom(network_result)
+    indices <- match(selected_genes, expression_genes)
+    selected_tom[,] <- tom[indices, indices, drop = FALSE]
+    rm(tom)
+  } else {
+    block_genes <- network_result$network$blockGenes
+    gene_blocks[] <- NA_integer_
+    for (block in seq_along(block_genes)) {
+      indices <- as.integer(block_genes[[block]])
+      genes <- expression_genes[indices]
+      keep <- intersect(selected_genes, genes)
+      if (length(keep) == 0L) next
+      tom <- load_network_tom(network_result, block = block)
+      local_indices <- match(keep, genes)
+      selected_tom[keep, keep] <- tom[local_indices, local_indices, drop = FALSE]
+      gene_blocks[keep] <- block
+      rm(tom)
+      invisible(gc(verbose = FALSE))
+    }
+    if (anyNA(gene_blocks)) {
+      stop("Some selected genes could not be matched to a TOM block.", call. = FALSE)
+    }
+  }
+  diag(selected_tom) <- 1
+  list(matrix = selected_tom, blocks = gene_blocks, method = summary$method)
+}
+
+tom_edge_threshold <- function(tom, quantile = 0.95) {
+  if (!is.numeric(quantile) || length(quantile) != 1L || is.na(quantile) ||
+      quantile < 0 || quantile > 1) {
+    stop("TOM edge quantile must be between 0 and 1.", call. = FALSE)
+  }
+  values <- tom[lower.tri(tom)]
+  values <- values[is.finite(values) & values > 0]
+  if (length(values) == 0L) return(Inf)
+  as.numeric(stats::quantile(values, probs = quantile, names = FALSE, type = 8))
+}
+
+cytoscape_tom_tables <- function(tom, node_attributes, threshold) {
+  indices <- which(lower.tri(tom) & tom >= threshold & tom > 0, arr.ind = TRUE)
+  edges <- data.frame(
+    fromNode = if (nrow(indices) == 0L) character() else rownames(tom)[indices[, 1L]],
+    toNode = if (nrow(indices) == 0L) character() else colnames(tom)[indices[, 2L]],
+    weight = if (nrow(indices) == 0L) numeric() else tom[indices],
+    direction = if (nrow(indices) == 0L) character() else rep("undirected", nrow(indices)),
+    stringsAsFactors = FALSE
+  )
+  nodes <- node_attributes[match(rownames(tom), node_attributes$gene), , drop = FALSE]
+  names(nodes)[names(nodes) == "gene"] <- "nodeName"
+  nodes$altName <- nodes$nodeName
+  preferred <- c(
+    "nodeName", "altName", "module", "is_hub", "module_membership",
+    "abs_module_membership", "kWithin", "connectivity_mode"
+  )
+  nodes <- nodes[, c(intersect(preferred, names(nodes)), setdiff(names(nodes), preferred)), drop = FALSE]
+  list(edges = edges, nodes = nodes)
+}
+
+tom_connectivity_plot <- function(tom, modules) {
+  if (nrow(tom) > 1L) {
+    dendrogram <- stats::hclust(stats::as.dist(1 - tom), method = "average")
+    order <- dendrogram$order
+  } else {
+    order <- 1L
+  }
+  ordered <- tom[order, order, drop = FALSE]
+  genes <- rownames(ordered)
+  plot_data <- data.frame(
+    x = rep(seq_along(genes), times = length(genes)),
+    y = rep(seq_along(genes), each = length(genes)),
+    tom = as.vector(ordered),
+    stringsAsFactors = FALSE
+  )
+  ggplot2::ggplot(plot_data, ggplot2::aes(x = x, y = y, fill = tom)) +
+    ggplot2::geom_raster() +
+    ggplot2::scale_fill_viridis_c(limits = c(0, 1), option = "C") +
+    ggplot2::coord_equal(expand = FALSE) +
+    ggplot2::labs(
+      title = "TOM connectivity",
+      subtitle = paste(length(genes), "genes across", length(unique(modules)), "module(s)"),
+      x = NULL, y = NULL, fill = "TOM"
+    ) +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(
+      axis.text = ggplot2::element_blank(),
+      axis.ticks = ggplot2::element_blank(),
+      panel.grid = ggplot2::element_blank()
+    )
+}
+
+build_tom_network_outputs <- function(network_result,
+                                      expression_genes,
+                                      hub_table,
+                                      max_genes = 250L,
+                                      edge_quantile = 0.95,
+                                      session_dir = NULL) {
+  selected_genes <- select_tom_output_genes(hub_table, max_genes)
+  selected <- load_selected_tom(
+    network_result,
+    expression_genes,
+    selected_genes,
+    session_dir
+  )
+  threshold <- tom_edge_threshold(selected$matrix, edge_quantile)
+  tables <- cytoscape_tom_tables(selected$matrix, hub_table, threshold)
+  tables$nodes$tom_block <- unname(selected$blocks[tables$nodes$nodeName])
+  node_modules <- hub_table$module[match(selected_genes, hub_table$gene)]
+  list(
+    genes = length(selected_genes),
+    edges = nrow(tables$edges),
+    threshold = threshold,
+    edge_quantile = edge_quantile,
+    selected_genes = selected_genes,
+    block_method = selected$method,
+    blocks = selected$blocks,
+    node_table = tables$nodes,
+    edge_table = tables$edges,
+    plot = tom_connectivity_plot(selected$matrix, node_modules)
+  )
+}
+
 safe_module_filename <- function(value) {
   gsub("[^A-Za-z0-9_.-]+", "_", value)
 }
@@ -235,6 +394,9 @@ run_hub_analysis <- function(session_dir,
                              connectivity_mode = c("adjacency", "tom"),
                              trait = NULL,
                              trait_method = "pearson",
+                             create_tom_outputs = FALSE,
+                             tom_max_genes = 250L,
+                             tom_edge_quantile = 0.95,
                              create_plot = TRUE,
                              save_artifacts = TRUE,
                              verbose = TRUE) {
@@ -258,6 +420,14 @@ run_hub_analysis <- function(session_dir,
       is.na(connectivity_quantile) || connectivity_quantile < 0 ||
       connectivity_quantile > 1) {
     stop("Connectivity quantile must be between 0 and 1.", call. = FALSE)
+  }
+  if (!is.numeric(tom_max_genes) || length(tom_max_genes) != 1L ||
+      is.na(tom_max_genes) || tom_max_genes < 2) {
+    stop("Maximum TOM-output genes must be at least 2.", call. = FALSE)
+  }
+  if (!is.numeric(tom_edge_quantile) || length(tom_edge_quantile) != 1L ||
+      is.na(tom_edge_quantile) || tom_edge_quantile < 0 || tom_edge_quantile > 1) {
+    stop("TOM edge quantile must be between 0 and 1.", call. = FALSE)
   }
 
   network <- networks[[network_type]]
@@ -364,6 +534,20 @@ run_hub_analysis <- function(session_dir,
     -hub_table$kWithin
   ), , drop = FALSE]
 
+  tom_network <- if (isTRUE(create_tom_outputs)) {
+    if (verbose) message("Building TOM visualization and Cytoscape tables...")
+    build_tom_network_outputs(
+      network_result = inputs$network_result,
+      expression_genes = colnames(expression),
+      hub_table = hub_table,
+      max_genes = as.integer(tom_max_genes),
+      edge_quantile = tom_edge_quantile,
+      session_dir = session_dir
+    )
+  } else {
+    NULL
+  }
+
   plot <- ggplot2::ggplot(
     hub_table,
     ggplot2::aes(x = kWithin, y = abs_module_membership, color = is_hub)
@@ -394,7 +578,10 @@ run_hub_analysis <- function(session_dir,
   plots_dir <- file.path(session_dir, "plots")
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   dir.create(plots_dir, recursive = TRUE, showWarnings = FALSE)
-  files <- list(report = NULL, hubs = NULL, gene_membership = NULL, plot = NULL)
+  files <- list(
+    report = NULL, hubs = NULL, gene_membership = NULL, plot = NULL,
+    tom_plot = NULL, cytoscape_edges = NULL, cytoscape_nodes = NULL
+  )
   if (save_artifacts) {
     files$hubs <- file.path(output_dir, "5_hub_genes.tsv")
     utils::write.table(
@@ -429,6 +616,39 @@ run_hub_analysis <- function(session_dir,
         height = max(5, 3.5 * ceiling(length(modules) / 3)),
         bg = "white"
       )
+      if (!is.null(tom_network)) {
+        files$tom_plot <- file.path(plots_dir, "5_tom_connectivity.pdf")
+        ggplot2::ggsave(
+          files$tom_plot,
+          tom_network$plot,
+          width = 9,
+          height = 8,
+          bg = "white"
+        )
+      }
+    }
+    if (!is.null(tom_network)) {
+      cytoscape_dir <- file.path(output_dir, "cytoscape")
+      dir.create(cytoscape_dir, recursive = TRUE, showWarnings = FALSE)
+      module_slug <- paste(safe_module_filename(modules), collapse = "-")
+      files$cytoscape_edges <- file.path(
+        cytoscape_dir,
+        paste0("5_cytoscape_edges_", safe_module_filename(network_type), "_", module_slug, ".tsv")
+      )
+      files$cytoscape_nodes <- file.path(
+        cytoscape_dir,
+        paste0("5_cytoscape_nodes_", safe_module_filename(network_type), "_", module_slug, ".tsv")
+      )
+      utils::write.table(
+        tom_network$edge_table,
+        files$cytoscape_edges,
+        sep = "\t", quote = FALSE, row.names = FALSE
+      )
+      utils::write.table(
+        tom_network$node_table,
+        files$cytoscape_nodes,
+        sep = "\t", quote = FALSE, row.names = FALSE
+      )
     }
   }
   report <- list(
@@ -439,12 +659,16 @@ run_hub_analysis <- function(session_dir,
       connectivity_quantile = connectivity_quantile,
       connectivity_mode = connectivity_mode,
       trait = trait,
-      trait_method = trait_method
+      trait_method = trait_method,
+      create_tom_outputs = create_tom_outputs,
+      tom_max_genes = as.integer(tom_max_genes),
+      tom_edge_quantile = tom_edge_quantile
     ),
     genes = nrow(hub_table),
     hubs = sum(hub_table$is_hub),
     hub_table = hub_table,
     plot = plot,
+    tom_network = tom_network,
     files = files,
     completed_at = Sys.time()
   )

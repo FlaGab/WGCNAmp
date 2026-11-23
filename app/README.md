@@ -48,7 +48,8 @@ The current milestone provides:
   within-network FDR correction;
 - WGCNA hub-gene ranking with dynamic network, module, threshold, and optional
   gene-significance controls, using either scalable adjacency connectivity or
-  notebook-compatible stored TOM connectivity;
+  notebook-compatible stored TOM connectivity, plus bounded TOM heatmaps and
+  weighted Cytoscape node/edge exports;
 - Arabidopsis GO and KEGG enrichment with selectable modules, database-specific
   controls, TAIR-to-Entrez mapping diagnostics, cutoffs, result tables, and
   separate plots and artifacts;

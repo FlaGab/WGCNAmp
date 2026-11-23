@@ -50,7 +50,7 @@ hubAnalysisUI <- function(id) {
     downstream_stage_heading(
       5,
       "Hub genes",
-      "Rank genes using module membership and either scalable adjacency connectivity or notebook-compatible TOM connectivity.",
+      "Rank hub genes, inspect TOM connectivity, and export weighted networks for Cytoscape.",
       ns
     ),
     shiny::uiOutput(ns("prerequisite_notice")),
@@ -73,6 +73,8 @@ hubAnalysisUI <- function(id) {
           selected = "adjacency"
         ),
         shiny::uiOutput(ns("connectivity_guidance")),
+        shiny::h3("TOM visualization and Cytoscape export"),
+        shiny::uiOutput(ns("tom_output_controls")),
         shiny::div(
           class = "form-grid form-grid-2",
           shiny::sliderInput(
@@ -102,7 +104,7 @@ hubAnalysisUI <- function(id) {
           shiny::uiOutput(ns("run_control")),
           shiny::p(
             class = "run-note",
-            "Larger modules take longer because connectivity is recalculated from expression data."
+            "TOM outputs load stored matrices even when scalable adjacency is used for hub ranking."
           )
         ),
         shiny::uiOutput(ns("run_feedback"))
@@ -262,6 +264,58 @@ hubAnalysisServer <- function(id, selected_session, on_complete = NULL) {
         )
       )
     })
+    output$tom_output_controls <- shiny::renderUI({
+      current <- spec()
+      if (is.null(current)) return(NULL)
+      if (!isTRUE(current$tom$available)) {
+        return(shiny::div(
+          class = "selection-guidance network-memory-warning",
+          shiny::icon("triangle-exclamation"),
+          shiny::span(
+            shiny::strong("TOM outputs are unavailable. "),
+            current$tom$message %||% "No compatible TOM artifact was found."
+          )
+        ))
+      }
+      parameters <- if (is.null(report())) list() else report()$parameters
+      shiny::tagList(
+        shiny::checkboxInput(
+          session$ns("create_tom_outputs"),
+          "Create a TOM heatmap and Cytoscape node/edge tables",
+          parameters$create_tom_outputs %||% FALSE
+        ),
+        shiny::conditionalPanel(
+          condition = sprintf("input['%s']", session$ns("create_tom_outputs")),
+          shiny::div(
+            class = "form-grid form-grid-2",
+            shiny::numericInput(
+              session$ns("tom_max_genes"),
+              "Maximum genes in TOM outputs",
+              value = parameters$tom_max_genes %||% 250,
+              min = 2, max = 1000, step = 10
+            ),
+            shiny::sliderInput(
+              session$ns("tom_edge_quantile"),
+              "Keep TOM edges at or above quantile",
+              min = 0.5, max = 0.999,
+              value = parameters$tom_edge_quantile %||% 0.95,
+              step = 0.01
+            )
+          ),
+          shiny::div(
+            class = "selection-guidance",
+            shiny::icon("circle-info"),
+            shiny::span(
+              "Hub candidates are selected first, followed by genes with the strongest module membership, while cycling across modules."
+            )
+          )
+        )
+      )
+    })
+    tom_outputs_requested <- shiny::reactive({
+      isTRUE(input$create_tom_outputs) &&
+        !is.null(spec()) && isTRUE(spec()$tom$available)
+    })
     output$run_control <- shiny::renderUI({
       button <- shiny::actionButton(
         session$ns("run"), "Find hub genes",
@@ -296,9 +350,12 @@ hubAnalysisServer <- function(id, selected_session, on_complete = NULL) {
               connectivity_mode = connectivity_mode,
               trait = input$trait,
               trait_method = input$trait_method,
+              create_tom_outputs = tom_outputs_requested(),
+              tom_max_genes = input$tom_max_genes %||% 250,
+              tom_edge_quantile = input$tom_edge_quantile %||% 0.95,
               verbose = FALSE
             )
-            shiny::incProgress(0.85, detail = "Saving hub tables and plot")
+            shiny::incProgress(0.85, detail = "Saving hub, TOM, and Cytoscape outputs")
             result
           }
         )
@@ -320,9 +377,88 @@ hubAnalysisServer <- function(id, selected_session, on_complete = NULL) {
       table <- table[table$is_hub, , drop = FALSE]
       utils::head(table, 100L)
     }, digits = 4, striped = TRUE, hover = TRUE, spacing = "s")
+    output$tom_plot <- shiny::renderPlot({
+      shiny::req(report(), report()$tom_network)
+      print(report()$tom_network$plot)
+    }, res = 110)
+    output$cytoscape_edges <- shiny::renderTable({
+      shiny::req(report(), report()$tom_network)
+      utils::head(report()$tom_network$edge_table, 100L)
+    }, digits = 4, striped = TRUE, hover = TRUE, spacing = "s")
+    output$download_cytoscape_edges <- shiny::downloadHandler(
+      filename = function() {
+        shiny::req(report(), report()$files$cytoscape_edges)
+        basename(report()$files$cytoscape_edges)
+      },
+      content = function(file) {
+        shiny::req(report(), report()$files$cytoscape_edges)
+        file.copy(report()$files$cytoscape_edges, file, overwrite = TRUE)
+      }
+    )
+    output$download_cytoscape_nodes <- shiny::downloadHandler(
+      filename = function() {
+        shiny::req(report(), report()$files$cytoscape_nodes)
+        basename(report()$files$cytoscape_nodes)
+      },
+      content = function(file) {
+        shiny::req(report(), report()$files$cytoscape_nodes)
+        file.copy(report()$files$cytoscape_nodes, file, overwrite = TRUE)
+      }
+    )
     output$results_panel <- shiny::renderUI({
       current <- report()
       if (is.null(current)) return(downstream_empty("No hub-gene report yet."))
+      result_tabs <- list(
+        bslib::nav_panel(
+          "Hub score plot", shiny::plotOutput(session$ns("hub_plot"), height = "600px")
+        ),
+        bslib::nav_panel(
+          "Hub table",
+          shiny::div(class = "threshold-table-wrap", shiny::tableOutput(session$ns("hub_table")))
+        )
+      )
+      if (!is.null(current$tom_network)) {
+        result_tabs <- c(result_tabs, list(
+          bslib::nav_panel(
+            "TOM connectivity",
+            shiny::plotOutput(session$ns("tom_plot"), height = "720px")
+          ),
+          bslib::nav_panel(
+            "Cytoscape export",
+            shiny::div(
+              class = "selection-guidance",
+              shiny::icon("circle-nodes"),
+              shiny::div(
+                shiny::strong(paste(
+                  format(current$tom_network$genes, big.mark = ","), "nodes and",
+                  format(current$tom_network$edges, big.mark = ","), "edges"
+                )),
+                shiny::p(paste0(
+                  "Edges retain TOM weights at or above the ",
+                  format(100 * current$tom_network$edge_quantile, trim = TRUE),
+                  "th percentile (threshold ",
+                  format(current$tom_network$threshold, digits = 4), ").",
+                  if (identical(current$tom_network$block_method, "blockwise")) {
+                    " Cross-block TOM values are unavailable, so cross-block edges are omitted."
+                  } else {
+                    ""
+                  }
+                ))
+              )
+            ),
+            shiny::div(
+              class = "form-grid form-grid-2",
+              shiny::downloadButton(session$ns("download_cytoscape_nodes"), "Download node table"),
+              shiny::downloadButton(session$ns("download_cytoscape_edges"), "Download edge table")
+            ),
+            shiny::h3("Edge preview"),
+            shiny::div(
+              class = "threshold-table-wrap",
+              shiny::tableOutput(session$ns("cytoscape_edges"))
+            )
+          )
+        ))
+      }
       shiny::tagList(
         downstream_results_heading("Hub-gene candidates", current$completed_at),
         shiny::div(
@@ -339,15 +475,9 @@ hubAnalysisServer <- function(id, selected_session, on_complete = NULL) {
             "connectivity"
           )
         ),
-        bslib::navset_card_tab(
-          title = "Hub results",
-          bslib::nav_panel(
-            "Hub score plot", shiny::plotOutput(session$ns("hub_plot"), height = "600px")
-          ),
-          bslib::nav_panel(
-            "Hub table",
-            shiny::div(class = "threshold-table-wrap", shiny::tableOutput(session$ns("hub_table")))
-          )
+        do.call(
+          bslib::navset_card_tab,
+          c(list(title = "Hub results"), result_tabs)
         )
       )
     })
