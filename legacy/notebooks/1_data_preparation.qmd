@@ -1,0 +1,100 @@
+---
+title: "WGCNA_step1_data_preparation"
+format: html
+editor: visual
+execute:
+  enabled: false
+---
+
+> Legacy developer reference. This notebook is not part of the supported user workflow and should not be edited to run an analysis. Use the Shiny GUI.
+
+# Expression data preparation for WGCNA
+
+This archived report documents the `run_data_preparation()` programmatic API.
+Advanced users should call that function directly from R code.
+
+## Dataset-specific metadata
+
+The current analysis colors QC plots by the experimental cross. Keeping this
+transformation outside `run_data_preparation()` makes the pipeline function
+reusable with datasets that have different metadata columns.
+
+```{r}
+add_cross_metadata <- function(metadata) {
+  required_columns <- c("mat.gen", "mat.ploidy", "pat.gen", "pat.ploidy")
+  missing_columns <- setdiff(required_columns, colnames(metadata))
+  if (length(missing_columns) > 0L) {
+    stop(
+      "Cannot construct 'cross'; missing metadata columns: ",
+      paste(missing_columns, collapse = ", ")
+    )
+  }
+
+  metadata$cross <- factor(paste0(
+    metadata$mat.gen,
+    "_",
+    metadata$mat.ploidy,
+    "X",
+    metadata$pat.gen,
+    "_",
+    metadata$pat.ploidy
+  ))
+  metadata
+}
+```
+
+## Run data preparation
+
+```{r}
+preparation_result <- run_data_preparation(
+  session_dir = session_dir,
+  counts_file = counts_file,
+  gene_length_column = NULL,
+  metadata_file = metadata_file,
+  traits_file = NULL,
+  traits_sample_id = "sample",
+  traits_sep = ";",
+  excluded_samples = character(),
+  filtering_method = "2",
+  n = 10,
+  m = 3,
+  p = 0.75,
+  qc_color_column = "cross",
+  metadata_transform = add_cross_metadata
+)
+
+preparation_result
+```
+
+## Quality-control preview
+
+The clustering and PCA plots are saved in the session's `plots/` directory.
+
+```{r}
+print(preparation_result$qc$pca)
+```
+
+## Preparation summary
+
+```{r}
+data.frame(
+  metric = c(
+    "Input genes",
+    "Genes after missing-data QC",
+    "Retained genes",
+    "Input samples",
+    "Retained samples"
+  ),
+  value = c(
+    preparation_result$summary$input_genes,
+    preparation_result$summary$genes_after_missing_qc,
+    preparation_result$summary$retained_genes,
+    preparation_result$summary$input_samples,
+    preparation_result$summary$retained_samples
+  )
+)
+```
+
+```{r}
+preparation_result$files
+```

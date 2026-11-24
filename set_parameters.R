@@ -46,6 +46,7 @@ categorical_min_count <- 1
 categorical_drop_redundant <- TRUE
 
 #NULL retains every non-redundant generated contrast. To select or exclude
-#contrasts, use the exact names printed by 4_module-trait_cor.qmd.
+# contrasts, use the exact names reported by GUI Stage 4 or
+# run_module_trait_analysis().
 categorical_contrasts <- NULL
 categorical_exclude_contrasts <- NULL

@@ -3,23 +3,23 @@ title: "3.1_WGCNplots"
 author: "Flavio Gabrieli"
 format: html
 editor: visual
+execute:
+  enabled: false
 ---
+
+> Legacy developer reference. This notebook is not part of the supported user workflow and should not be edited to run an analysis. Use the Shiny GUI.
 
 ## Plotting features of the weighted co-expression networks generated
 
-Resume session
+This archived report records the diagnostic plotting calls now exposed by
+Stage 3. Advanced users should call `draw_network_dendrogram()` and
+`draw_eigengene_network()` directly from R code.
+
+Load the standardized network result supplied by the caller:
 
 ```{r}
-session_name <- "PROVA"
-```
-
-sLoad elements
-
-```{r}
-source("src/3_env_setup.R")
-source(paste0(session_name,"/in/",session_name, "_parameters.R"))
 network_result <- readRDS(
-  file.path(session_name, "out", "3_networks.rds")
+  file.path(session_dir, "out", "3_networks.rds")
 )
 
 net <- network_result$network
@@ -48,7 +48,7 @@ print(GenModPlot)
 print(GenModPlot_km)
 
 ggsave(
-  filename = paste0("plots/", session_name,"_modules-HC_barplot.png"),
+  filename = file.path(session_dir, "plots", "3_genes_in_modules_HC.png"),
   plot = GenModPlot,
   width = 8,          # Width in inches
   height = 6,         # Height in inches
@@ -57,7 +57,7 @@ ggsave(
 )
 
 ggsave(
-  filename = paste0("plots/", session_name,"_modules-KM_barplot.png"),
+  filename = file.path(session_dir, "plots", "3_genes_in_modules_KM.png"),
   plot = GenModPlot_km,
   width = 8,          # Width in inches
   height = 6,         # Height in inches
@@ -67,7 +67,7 @@ ggsave(
 ```
 
 ```{r}
-pdf(file = paste0("plots/", session_name,"_modules-HC_EigengenesNet.pdf"), 
+pdf(file = file.path(session_dir, "plots", "3_modules_HC_eigengenes.pdf"), 
   width = 8,          # Width in inches
   height = 6,         # Height in inches
   bg = "white")
@@ -81,7 +81,7 @@ plotEigengeneNetworks(orderMEs(net$MEs),
                       plotPreservation = "standard")
 dev.off()
 
-pdf(file = paste0("plots/", session_name,"_modules-KM_EigengenesNet.pdf"), 
+pdf(file = file.path(session_dir, "plots", "3_modules_KM_eigengenes.pdf"), 
   width = 8,          # Width in inches
   height = 6,         # Height in inches
   bg = "white")

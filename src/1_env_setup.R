@@ -59,6 +59,7 @@ source("src/importing_functions_v2.R")
 source("src/quality_check.R")
 source("src/filtering_functions.R")
 source("src/normalization.R")
+source("src/data_preparation_pipeline.R")
 
 create_session_env <- function(ses = session_name)
 if (!(dir.exists(ses))) {

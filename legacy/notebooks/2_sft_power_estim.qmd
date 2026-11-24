@@ -1,0 +1,52 @@
+---
+title: "WGCNA step 2: soft-threshold selection"
+format: html
+editor: visual
+execute:
+  enabled: false
+---
+
+> Legacy developer reference. This notebook is not part of the supported user workflow and should not be edited to run an analysis. Use the Shiny GUI.
+
+# Soft-threshold selection
+
+This archived report documents the `run_soft_threshold_selection()`
+programmatic API. Advanced users should call that function directly from R
+code.
+
+## Evaluate and select a power
+
+The default policy selects the smallest evaluated power whose signed model fit
+reaches 0.80. Set `selection_mode = "automatic"` to use WGCNA's estimate, or
+use `selection_mode = "manual"` together with `manual_power`.
+
+```{r}
+soft_threshold_result <- run_soft_threshold_selection(
+  session_dir = session_dir,
+  network_type = "signed",
+  powers = default_soft_threshold_powers(),
+  fit_cutoff = 0.80,
+  selection_mode = "first_above_cutoff"
+)
+
+soft_threshold_result
+```
+
+## Diagnostic plots
+
+```{r}
+gridExtra::grid.arrange(
+  soft_threshold_result$plots$scale_independence,
+  soft_threshold_result$plots$mean_connectivity,
+  nrow = 2
+)
+```
+
+## Evaluated powers
+
+```{r}
+soft_threshold_result$fit_indices
+```
+
+The selected power is saved in `out/2_pt.Rdata`, preserving the artifact used
+by Stage 3.

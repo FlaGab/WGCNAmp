@@ -1,0 +1,47 @@
+---
+title: "WGCNA step 3: blockwise network construction"
+format: html
+editor: visual
+execute:
+  enabled: false
+---
+
+> Legacy developer reference. This notebook is not part of the supported user workflow and should not be edited to run an analysis. Use the Shiny GUI.
+
+# Blockwise network construction
+
+This archived report documents the blockwise form of the
+`run_network_construction()` programmatic API. Advanced users should call that
+function directly from R code.
+
+## Construct the network
+
+The prepared expression matrix, selected power, and network type are loaded
+from the step-1 and step-2 artifacts. `tom_type = "auto"` selects a signed TOM
+for signed networks and an unsigned TOM for unsigned networks.
+
+```{r}
+network_report <- run_network_construction(
+  session_dir = session_dir,
+  method = "blockwise",
+  max_block_size = 20000,
+  tom_type = "auto",
+  correlation_type = "pearson",
+  merge_cut_height = 0.30,
+  deep_split = 2,
+  min_module_size = 30,
+  random_seed = 42,
+  kmeans_refinement = TRUE
+)
+
+network_report
+```
+
+## Module counts
+
+```{r}
+network_report$module_counts
+```
+
+The standardized network is stored in `out/3_networks.rds`. A legacy
+`out/3_networks.Rdata` containing `net` and `net_km` is also retained.

@@ -1,0 +1,40 @@
+---
+title: "6_modules_GO"
+author: "Flavio Gabrieli"
+format: html
+editor: visual
+execute:
+  enabled: false
+---
+
+> Legacy developer reference. This notebook is not part of the supported user workflow and should not be edited to run an analysis. Use the Shiny GUI.
+
+# GO enrichment of modules
+
+The maintained entry point is `run_module_enrichment()`. Advanced users should
+call it directly from R code with explicit arguments:
+
+```{r}
+go_result <- run_module_enrichment(
+  session_dir = session_dir,
+  network_type = network_type,
+  modules = modules,
+  database = "GO",
+  ontology = "BP"
+)
+
+kegg_result <- run_module_enrichment(
+  session_dir = session_dir,
+  network_type = network_type,
+  modules = modules,
+  database = "KEGG"
+)
+```
+
+The returned reports contain the selected parameters, result tables, plot
+objects, mapping diagnostics, and saved artifact paths:
+
+```{r}
+go_result$results
+kegg_result$results
+```
